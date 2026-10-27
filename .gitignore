@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 密钥（千万不要上传！）
+.env
+
+# 运行时数据
+data/db.json
+data/uploads/
+
+# 工具
+.pytest_cache/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

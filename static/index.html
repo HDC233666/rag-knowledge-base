@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RAG 知识库问答</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">📚 RAG 知识库问答</div>
+      <div class="meta" id="meta">加载中…</div>
+    </header>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <h2>知识库 <span class="pill" id="stats">–</span></h2>
+        <label class="upload">
+          <input id="file" type="file" accept=".txt,.md,.markdown,.pdf,.csv,.log" hidden />
+          <span>＋ 上传文档</span>
+        </label>
+        <ul class="docs" id="docs"></ul>
+        <p class="hint">支持 txt / md / pdf / csv，单文件 ≤ 20MB</p>
+      </aside>
+
+      <main class="chat">
+        <div class="messages" id="messages">
+          <div class="welcome">
+            <h3>先上传文档，再提问试试 👇</h3>
+            <p>示例：「什么是 RAG？」「BM25 和向量检索有什么区别？」</p>
+          </div>
+        </div>
+        <form class="composer" id="form">
+          <textarea id="question" rows="2" placeholder="输入问题，Enter 发送（Shift+Enter 换行）"></textarea>
+          <button id="send" type="submit">提问</button>
+        </form>
+      </main>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

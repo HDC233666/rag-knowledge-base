@@ -1,0 +1,265 @@
+:root {
+  --bg: #f6f7fb;
+  --card: #ffffff;
+  --text: #1f2330;
+  --muted: #6b7280;
+  --border: #e5e7eb;
+  --accent: #2563eb;
+  --accent-weak: #eef2ff;
+  --user: #2563eb;
+  --shadow: 0 8px 24px rgba(17, 24, 39, 0.06);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1115;
+    --card: #171a21;
+    --text: #e5e7eb;
+    --muted: #9ca3af;
+    --border: #2a2f3a;
+    --accent: #60a5fa;
+    --accent-weak: #1e293b;
+    --shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+}
+
+.brand { font-weight: 700; font-size: 16px; }
+.meta { color: var(--muted); font-size: 12px; }
+
+.layout {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  min-height: 0;
+}
+
+/* 左侧边栏 */
+.sidebar {
+  padding: 16px;
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+}
+
+.sidebar h2 { font-size: 14px; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+
+.pill {
+  font-size: 11px;
+  color: var(--accent);
+  background: var(--accent-weak);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-weight: 500;
+}
+
+.upload {
+  display: block;
+  text-align: center;
+  padding: 10px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+.upload:hover { background: var(--accent-weak); }
+
+.docs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+
+.docs li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.docs li.empty {
+  justify-content: center;
+  color: var(--muted);
+  background: transparent;
+  border-style: dashed;
+}
+
+.doc-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.doc-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-meta { color: var(--muted); font-size: 11px; }
+
+.doc-del {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+}
+.doc-del:hover { color: #ef4444; }
+
+.hint { color: var(--muted); font-size: 11px; margin-top: 12px; }
+
+/* 右侧对话区 */
+.chat { display: flex; flex-direction: column; min-height: 0; }
+.messages { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+
+.welcome { margin: auto; text-align: center; color: var(--muted); }
+.welcome h3 { color: var(--text); margin-bottom: 6px; }
+
+.msg { display: flex; }
+.msg.user { justify-content: flex-end; }
+.msg.bot { justify-content: flex-start; }
+
+.bubble {
+  max-width: min(760px, 88%);
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  line-height: 1.65;
+  font-size: 14px;
+  overflow-wrap: break-word;
+}
+
+.msg.user .bubble {
+  background: var(--user);
+  color: #fff;
+  border-color: transparent;
+}
+.msg.user .bubble p { margin: 0; }
+.bubble p { margin: 0 0 8px; }
+.bubble p:last-child { margin-bottom: 0; }
+
+/* Markdown 渲染样式（回答气泡内） */
+.bubble h3,
+.bubble h4,
+.bubble h5,
+.bubble h6 { margin: 12px 0 6px; font-size: 14.5px; line-height: 1.4; }
+.bubble ul,
+.bubble ol { margin: 0 0 8px; padding-left: 22px; }
+.bubble li { margin: 2px 0; }
+.bubble blockquote {
+  margin: 0 0 8px;
+  padding: 8px 12px;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-weak);
+  border-radius: 6px;
+  color: var(--muted);
+}
+.bubble code {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12.5px;
+  background: var(--accent-weak);
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+.bubble pre {
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+.bubble pre code { background: transparent; color: inherit; padding: 0; }
+.bubble hr { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
+.bubble a { color: var(--accent); }
+
+.badges { display: flex; gap: 6px; margin-top: 8px; }
+.badge {
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.citations { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.citation {
+  font-size: 12px;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-weak);
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+.cite-id { font-weight: 700; color: var(--accent); margin-right: 6px; }
+.cite-doc { font-weight: 600; margin-right: 6px; }
+.cite-score { color: var(--muted); }
+.cite-snippet { color: var(--muted); margin-top: 2px; }
+
+.typing { color: var(--muted); font-size: 13px; }
+
+/* 输入框 */
+.composer {
+  display: flex;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--card);
+}
+
+.composer textarea {
+  flex: 1;
+  resize: none;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg);
+  outline: none;
+}
+.composer textarea:focus { border-color: var(--accent); }
+
+.composer button {
+  padding: 0 22px;
+  border: none;
+  border-radius: 12px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.composer button:hover { filter: brightness(1.08); }
+
+/* 提示条 */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  background: #111827;
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  box-shadow: var(--shadow);
+  z-index: 50;
+}
+.toast.error { background: #b91c1c; }
