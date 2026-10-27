@@ -131,7 +131,6 @@ rag-knowledge-base/
 │   ├── sample/        # 示例知识库
 │   └── db.json        # 运行时生成（已 gitignore；用 MySQL 时不生成）
 ├── tests/             # pytest 测试
-├── docs/LEARNING.md   # 零基础讲解 + 面试问答
 └── .github/workflows/ci.yml
 ```
 
@@ -143,7 +142,7 @@ pytest -q
 
 ## 进阶：接入 MySQL（可选）
 
-想让简历上多一条「MySQL 表设计」，把存储从 JSON 换成 MySQL 不用改代码，只需配置：
+默认使用 JSON 文件存储；需要数据库存储时，可切换为 MySQL（无需改代码）：
 
 **1. 建库建账号（一次即可）**
 
@@ -172,7 +171,7 @@ RAG_DB_NAME=rag_kb
 | `documents` | id, name, chunks, chars, created_at | 一篇文档一行 |
 | `chunks` | id, doc_id, idx, text, chars | 一个切分块一行，`doc_id` 外键关联 `documents` |
 
-**设计点（面试可以讲）：**
+**设计要点：**
 
 - **外键 + 级联删除**：`ON DELETE CASCADE` 保证删文档时自动清掉它的所有块，不留孤儿数据；
 - **索引**：`doc_id` 上建索引，按文档查块、级联删除都不全表扫描；

@@ -3,7 +3,7 @@
 为什么用 BM25 而不是向量检索？
 - 零依赖、几毫秒出结果，适合"上传文档立刻就能问答"的 demo；
 - 中文按「单字 + 二元组」切词，避免没有分词器的问题；
-- 生产环境想更准，可以换成 FAISS / Chroma / Milvus + embedding（见 docs/LEARNING.md）。
+- 生产环境想更准，可以换成 FAISS / Chroma / Milvus + embedding。
 
 检索流程：把每个块切成 token → 建 BM25 索引 → 对问题同样切词 → 打分排序取 top_k。
 """

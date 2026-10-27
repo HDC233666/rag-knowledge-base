@@ -131,7 +131,6 @@ rag-knowledge-base/
 │   ├── sample/        # Sample knowledge base
 │   └── db.json        # Generated at runtime (gitignored; not used with MySQL)
 ├── tests/             # pytest tests
-├── docs/LEARNING.md   # Beginner guide + interview Q&A
 └── .github/workflows/ci.yml
 ```
 
@@ -172,7 +171,7 @@ RAG_DB_NAME=rag_kb
 | `documents` | id, name, chunks, chars, created_at | one row per document |
 | `chunks` | id, doc_id, idx, text, chars | one row per chunk; `doc_id` FK → `documents` |
 
-**Design points (good interview material):**
+**Design points:**
 
 - **Foreign key + cascade delete**: `ON DELETE CASCADE` removes all chunks of a deleted document — no orphan rows.
 - **Index**: an index on `doc_id` avoids full scans when listing chunks or cascading deletes.
