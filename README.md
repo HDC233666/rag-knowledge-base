@@ -204,19 +204,9 @@ RAG_DB_NAME=rag_kb
 - [ ] 答案评分/反馈按钮
 - [ ] Docker 部署
 
-## 发布到 GitHub
+## 安全提示
 
-```bash
-git init
-git add .
-git status          # 确认 .env 没有被加进去（应显示 ignored）
-git commit -m "feat: RAG 知识库问答 v1.0"
-git branch -M main
-git remote add origin https://github.com/<你的用户名>/rag-knowledge-base.git
-git push -u origin main
-```
-
-> ⚠️ 提交前务必确认 `.env`（含数据库密码）和 `data/db.json` 没有入库（README 里不要放真实 Key）。
+`.env`（含 API Key 与数据库密码）和 `data/db.json` 已在 `.gitignore` 中忽略，不会提交到仓库；本 README 与示例配置里也不含任何真实密钥。
 
 ## 常见问题
 

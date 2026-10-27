@@ -204,19 +204,9 @@ RAG_DB_NAME=rag_kb
 - [ ] Answer rating / feedback button
 - [ ] Docker deployment
 
-## Publish to GitHub
+## Security notes
 
-```bash
-git init
-git add .
-git status          # make sure .env is not staged (should be ignored)
-git commit -m "feat: RAG knowledge base Q&A v1.0"
-git branch -M main
-git remote add origin https://github.com/<your-username>/rag-knowledge-base.git
-git push -u origin main
-```
-
-> ⚠️ Before committing, confirm `.env` (it holds the DB password) and `data/db.json` are not tracked (never put a real key in the README).
+`.env` (API key and database password) and `data/db.json` are ignored by `.gitignore` and never committed; this README and the sample config contain no real secrets.
 
 ## FAQ
 
