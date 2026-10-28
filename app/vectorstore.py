@@ -135,11 +135,24 @@ def vector_search(chunks: list[dict], query: str, top_k: int = 4, embedder=None)
     return index.search(query, top_k)
 
 
+def _faiss_available() -> bool:
+    try:
+        import faiss  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
 def backend_name() -> str:
     """当前实际使用的后端名（测试与 /api/health 展示用）。"""
     if _cache:
         return getattr(next(iter(_cache.values())), "backend", "numpy")
-    return VECTOR_BACKEND if VECTOR_BACKEND in ("numpy", "faiss") else "numpy"
+    if VECTOR_BACKEND == "numpy":
+        return "numpy"
+    if VECTOR_BACKEND == "faiss":
+        return "faiss" if _faiss_available() else "numpy"
+    # auto：装了 faiss 就用，否则 numpy（与 make_index 的降级逻辑保持一致）
+    return "faiss" if _faiss_available() else "numpy"
 
 
 def reset_cache() -> None:

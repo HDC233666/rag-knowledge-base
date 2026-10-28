@@ -13,7 +13,9 @@
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Python](https://img.shields.io/badge/python-3.11%2B-yellow)
 
-![界面截图](docs/screenshots/chat.png)
+| 对话界面（回答 + 引用） | API 文档（Swagger UI） |
+|---|---|
+| ![对话界面](docs/screenshots/chat.png) | ![API 文档](docs/screenshots/api.png) |
 
 ---
 

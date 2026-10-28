@@ -13,7 +13,9 @@ An **out-of-the-box** RAG (Retrieval-Augmented Generation) knowledge-base Q&A ap
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Python](https://img.shields.io/badge/python-3.11%2B-yellow)
 
-![Screenshot](docs/screenshots/chat.png)
+| Chat UI (answer + citations) | API docs (Swagger UI) |
+|---|---|
+| ![Chat UI](docs/screenshots/chat.png) | ![API docs](docs/screenshots/api.png) |
 
 ---
 
