@@ -12,6 +12,7 @@ venv/
 data/db.json
 data/cache.db
 data/uploads/
+data/feedback.jsonl
 
 # 工具
 .pytest_cache/
