@@ -24,6 +24,7 @@ from .config import DATA_DIR, DEEPSEEK_API_KEY, DEEPSEEK_MODEL, RATE_LIMIT_PER_M
 from .db import make_store
 from .loaders import load_bytes
 from .rag import answer as rag_answer
+from .rag import retrieve as rag_retrieve
 from .rag import answer_stream as rag_answer_stream
 from .vectorstore import backend_name as vector_backend_name
 
@@ -102,6 +103,13 @@ class AskRequest(BaseModel):
     top_k: int | None = Field(default=None, ge=1, le=10)
     history: list[Message] = Field(default_factory=list, max_length=12)
     collection: str = Field(default="default", max_length=64)
+
+
+class RetrieveRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=4000)
+    collection: str = Field(default="default", max_length=64)
+    top_k: int = Field(default=4, ge=1, le=20)
+    llm: bool = Field(default=False, description="是否启用查询改写 / LLM 重排（默认关闭，压测与评估用）")
 
 
 class DocumentIn(BaseModel):
@@ -184,6 +192,27 @@ def delete_document(doc_id: str) -> dict:
     if not store.delete(doc_id):
         raise HTTPException(status_code=404, detail="文档不存在")
     return {"ok": True}
+
+
+@app.post("/api/retrieve")
+def retrieve_only(payload: RetrieveRequest) -> dict:
+    """检索调试接口：只跑检索链路，不生成回答（评估 / 压测用，默认不花 API 费用）。"""
+    name = _clean_collection(payload.collection)
+    chunks = store.all_chunks(name)
+    if not chunks:
+        raise HTTPException(status_code=400, detail=f"知识库「{name}」还没有文档，请先上传。")
+    started = time.perf_counter()
+    try:
+        hits, trace = rag_retrieve(payload.question, chunks, payload.top_k, use_llm=payload.llm)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    latency_ms = round((time.perf_counter() - started) * 1000)
+    return {
+        "collection": name,
+        "hits": hits,
+        "trace": trace,
+        "latency_ms": latency_ms,
+    }
 
 
 @app.post("/api/ask")

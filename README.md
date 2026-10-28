@@ -43,7 +43,7 @@
 | 多轮对话 | 前端自动带上最近几轮问答，追问（「那向量检索的缺点呢？」）能接上文 |
 | 限流 | 每 IP 每分钟请求数上限（`RAG_RATE_LIMIT`），超限返回 429，防止接口被刷 |
 | 界面 | 原生 HTML/CSS/JS，无构建工具，支持深色模式，回答自动渲染 Markdown |
-| 测试 | pytest，49 个用例覆盖切分/检索/融合/重排/缓存/向量索引/多知识库/反馈/指标/接口/流式/限流；GitHub Actions 自动跑 |
+| 测试 | pytest，51 个用例覆盖切分/检索/融合/重排/缓存/向量索引/多知识库/反馈/指标/接口/流式/限流；GitHub Actions 自动跑 |
 
 ## 架构
 
@@ -145,6 +145,7 @@ uvicorn app.main:app --reload
 | POST | `/api/upload` | 上传文件（multipart，可带 `collection` 字段） |
 | DELETE | `/api/documents/{id}` | 删除文档 |
 | POST | `/api/ask` | 提问（JSON：`{question, top_k?, history?, collection?}`）→ 一次性返回 |
+| POST | `/api/retrieve` | **只检索不生成**（压测/评估用，默认 `llm=false` 不花 API 费用）：`{question, collection?, top_k?, llm?}` → `{hits, trace, latency_ms}` |
 | POST | `/api/ask/stream` | 同上入参，**SSE 流式**：`trace` / `delta` / `done` 事件 |
 | POST | `/api/feedback` | 答案反馈 `{rating: up\|down, question?, comment?, collection?}` |
 | GET | `/api/feedback/stats` | 反馈统计（👍/👎 数量 + 最近 5 条） |
@@ -207,6 +208,27 @@ rag-knowledge-base/
 ```bash
 pytest -q
 ```
+
+## 工程指标（本机压测）
+
+| 指标 | 实测 | 说明 |
+|---|---|---|
+| 检索延迟（单并发） | p50 **44 ms** / p95 **48 ms** | 14 切片：bge 查询向量 + BM25 + RRF |
+| 检索吞吐（5 并发） | **~25 QPS**，p95 **~200 ms** | 单进程 uvicorn + ONNX CPU |
+| 检索吞吐（20 并发） | **~31 QPS**，p95 **~700 ms** | 并发上来后 embedding 排队 |
+| 端到端回答 | **1.2 – 2.6 s** | 检索 + Prompt + LLM + 引用 |
+| 每次问答成本 | **≈ ¥0.003** | ~1500 tokens；1000 次 ≈ 3 元 |
+| 冷启动 | **~8 s** | 加载 bge-small-zh（95MB ONNX） |
+
+```bash
+# 只压检索链路，不花 API 费用
+python scripts/bench.py --path /api/retrieve --total 60 --concurrency 5
+# 压 Web 层开销
+python scripts/bench.py --path /api/stats --total 200 --concurrency 50
+```
+
+> 单进程 + CPU ONNX 是吞吐瓶颈；生产做法是 uvicorn 多 worker 或把 embedding 拆成独立服务。
+> 查询向量做了进程内 LRU 缓存，重复问题直接跳过 embedding。
 
 ## 检索评估
 

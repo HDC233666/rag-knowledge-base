@@ -58,20 +58,39 @@ class HashEmbedder:
 class FastEmbedEmbedder:
     """bge-small-zh 的 ONNX 推理封装（首次调用会加载/下载模型）。"""
 
+    QUERY_CACHE_SIZE = int(os.getenv("RAG_EMBED_QUERY_CACHE", "256"))
+
     def __init__(self, model_name: str = MODEL_NAME):
         from fastembed import TextEmbedding
 
         self._model = TextEmbedding(model_name)
         self.name = model_name
         self.dim = DIM
+        self._query_cache: dict[str, np.ndarray] = {}
+        self._cache_lock = threading.Lock()
 
     def embed(self, texts: Sequence[str]) -> np.ndarray:
         vectors = np.array(list(self._model.embed(list(texts))), dtype=np.float32)
         return _normalize(vectors)
 
     def embed_query(self, query: str) -> np.ndarray:
-        """检索查询要加 bge 的指令前缀；文档块走 embed() 不加。"""
-        return self.embed([QUERY_PREFIX + (query or "")])[0]
+        """检索查询要加 bge 的指令前缀；文档块走 embed() 不加。
+
+        同一问题在压测 / 连续追问里会重复出现，做一层进程内 LRU 缓存：
+        embedding 是单次检索里最贵的 CPU 步骤，命中后直接从毫秒级降到微秒级。
+        """
+        text = QUERY_PREFIX + (query or "")
+        with self._cache_lock:
+            cached = self._query_cache.get(text)
+            if cached is not None:
+                return cached
+        vector = self.embed([text])[0]
+        with self._cache_lock:
+            if len(self._query_cache) >= self.QUERY_CACHE_SIZE:
+                # 简单的 FIFO 淘汰，够用（查询分布通常很集中）
+                self._query_cache.pop(next(iter(self._query_cache)))
+            self._query_cache[text] = vector
+        return vector
 
 
 _lock = threading.Lock()

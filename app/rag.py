@@ -37,9 +37,15 @@ def _empty_answer() -> dict:
     }
 
 
-def retrieve(question: str, chunks: list[dict], top_k: int) -> tuple[list[dict], dict]:
-    """检索 + 重排，返回 (命中片段, trace)。"""
-    queries, used_rewrite = rewrite(question)
+def retrieve(
+    question: str, chunks: list[dict], top_k: int, use_llm: bool = True
+) -> tuple[list[dict], dict]:
+    """检索 + 重排，返回 (命中片段, trace)。
+
+    use_llm=False 时跳过「查询改写 / LLM 重排」，只跑混合召回 + RRF，
+    用于评估基线、压测与调试（不消耗 API 费用）。
+    """
+    queries, used_rewrite = rewrite(question, enabled=use_llm and None)
 
     # 每条查询各做一次混合召回，再把这些排名用 RRF 融合（多查询召回）
     ranked_lists = []
@@ -49,7 +55,7 @@ def retrieve(question: str, chunks: list[dict], top_k: int) -> tuple[list[dict],
             ranked_lists.append(hits)
     candidates = rrf_fuse(ranked_lists)[:CANDIDATE_K] if ranked_lists else []
 
-    hits, used_rerank = rerank(question, candidates, top_k)
+    hits, used_rerank = rerank(question, candidates, top_k, enabled=use_llm and None)
     trace = {
         "queries": queries,
         "rewrite": used_rewrite,

@@ -142,3 +142,30 @@ def test_rate_limit(monkeypatch):
         assert client.get("/api/health").status_code == 200
     finally:
         main._rate_buckets.clear()
+
+def test_retrieve_only(tmp_path, monkeypatch):
+    _use_temp_store(tmp_path, monkeypatch)
+    client.post(
+        "/api/documents",
+        json={"name": "note.md", "text": "混合检索 = BM25 + 向量检索，用 RRF 融合排名。"},
+    )
+
+    response = client.post(
+        "/api/retrieve",
+        json={"question": "混合检索怎么融合？", "top_k": 2},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["hits"], "应该至少命中一个片段"
+    assert body["trace"]["candidates"] >= 1
+    assert body["latency_ms"] >= 0
+    assert body["hits"][0]["doc_name"] == "note.md"
+
+
+def test_retrieve_empty_collection():
+    _ = None
+    response = client.post(
+        "/api/retrieve",
+        json={"question": "随便问问", "collection": "no-such-kb"},
+    )
+    assert response.status_code == 400
