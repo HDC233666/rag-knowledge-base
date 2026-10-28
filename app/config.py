@@ -44,6 +44,10 @@ CACHE_TTL_SECONDS = int(os.getenv("RAG_CACHE_TTL", "3600"))
 RERANK_BACKEND = os.getenv("RAG_RERANK_BACKEND", "llm").strip().lower()
 CROSS_ENCODER_MODEL = os.getenv("RAG_CROSS_ENCODER_MODEL", "BAAI/bge-reranker-base")
 
+# ===== 防滥用（v3）=====
+# 每个 IP 每分钟最多多少个 /api 请求（公网 demo 建议 30~60；0 = 不限制）
+RATE_LIMIT_PER_MIN = int(os.getenv("RAG_RATE_LIMIT", "60"))
+
 # ===== 存储后端 =====
 # 留空 = 用 JSON 文件（默认，零配置）；填了 = 用 MySQL，连不上会自动降级 JSON
 DB_HOST = os.getenv("RAG_DB_HOST", "").strip()

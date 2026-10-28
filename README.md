@@ -32,8 +32,11 @@
 | 持久化 | 默认存 `data/db.json`，重启不丢；配置 MySQL 后存数据库（见「接入 MySQL」） |
 | MySQL 存储 | 可选：文档 + 切分块入库，演示表设计、索引、外键级联；连不上自动降级 JSON |
 | 检索评估 | 内置 60+ 题评估集 + 脚本，一键对比 BM25 / 混合 / 重排 / 改写的 hit@1、hit@3、MRR |
+| 流式回答 | `/api/ask/stream` 走 SSE：先推检索结果，再逐字推回答；界面边生成边显示 |
+| 多轮对话 | 前端自动带上最近几轮问答，追问（「那向量检索的缺点呢？」）能接上文 |
+| 限流 | 每 IP 每分钟请求数上限（`RAG_RATE_LIMIT`），超限返回 429，防止接口被刷 |
 | 界面 | 原生 HTML/CSS/JS，无构建工具，支持深色模式，回答自动渲染 Markdown |
-| 测试 | pytest，30 个用例覆盖切分/检索/融合/重排/缓存/接口；GitHub Actions 自动跑 |
+| 测试 | pytest，33 个用例覆盖切分/检索/融合/重排/缓存/接口/流式/限流；GitHub Actions 自动跑 |
 
 ## 架构
 
@@ -113,6 +116,7 @@ uvicorn app.main:app --reload
 | `RAG_ENABLE_CACHE` | `1` | 改写/重排结果缓存开关（SQLite + TTL） |
 | `RAG_CACHE_TTL` | `3600` | 缓存有效期（秒） |
 | `RAG_CACHE_PATH` | `data/cache.db` | 缓存文件位置（已 gitignore） |
+| `RAG_RATE_LIMIT` | `60` | 每 IP 每分钟问答次数上限，`0` = 关闭 |
 | `RAG_DB_HOST` | 空 | 填了就用 MySQL；留空用 JSON 文件 |
 | `RAG_DB_PORT` | `3306` | MySQL 端口 |
 | `RAG_DB_USER` | `root` | 数据库账号 |
@@ -129,7 +133,17 @@ uvicorn app.main:app --reload
 | POST | `/api/documents` | 创建文档（JSON：`{name, text}`） |
 | POST | `/api/upload` | 上传文件（multipart） |
 | DELETE | `/api/documents/{id}` | 删除文档 |
-| POST | `/api/ask` | 提问（JSON：`{question, top_k?}`） |
+| POST | `/api/ask` | 提问（JSON：`{question, top_k?, history?}`）→ 一次性返回 |
+| POST | `/api/ask/stream` | 同上入参，**SSE 流式**：`trace` / `delta` / `done` 事件 |
+
+流式接口的事件（每条 `data: {...}`）：
+
+| 事件 | 载荷 | 含义 |
+|---|---|---|
+| `trace` | `{queries, rewrite, rerank, candidates, citations}` | 检索完成，先把引用与 trace 推给前端 |
+| `delta` | `{text}` | 回答增量文本（逐字显示） |
+| `done` | `{answer, citations, latency_ms, tokens, trace}` | 整轮结束 |
+| `error` | `{detail}` | 出错 |
 
 示例：
 
@@ -138,6 +152,8 @@ curl -X POST http://127.0.0.1:8000/api/ask ^
   -H "Content-Type: application/json" ^
   -d "{\"question\": \"什么是 RAG？\"}"
 ```
+
+限流：默认每个 IP 每分钟 60 次（`RAG_RATE_LIMIT`，设为 0 关闭）。超限返回 `429 {"detail": "请求太频繁了，稍后再试"}`，`/api/health` 不受限。
 
 ## 项目结构
 
@@ -167,7 +183,7 @@ rag-knowledge-base/
 │   └── smoke.py       # 真实接口冒烟
 ├── docs/
 │   └── LEARNING-RAG-ADVANCED.md  # 面向零基础的进阶讲解（原理 + 评估 + 面试问答）
-├── tests/             # pytest 测试（27 个用例）
+├── tests/             # pytest 测试（33 个用例）
 └── .github/workflows/ci.yml
 ```
 
@@ -273,6 +289,12 @@ RAG_DB_NAME=rag_kb
 - 改写：用户问题往往口语化、信息少，让大模型改写成 2–3 个检索式分别召回再融合，能明显提升命中率（评估集上 hit@1 从 0.73 → 0.77）；
 - 两者都靠大模型，代价是延迟（毫秒级 → 秒级），所以做成开关，可评估、可关闭。
 
+**为什么加流式、多轮与限流？**
+
+- 流式：检索 + 生成要 1–2 秒，全量返回前界面是空白的；SSE 先把检索 trace 和引用推给前端，再逐字推回答，等待感明显下降；
+- 多轮：追问（「那它的缺点呢？」）不带上下文会被当成新问题，前端带最近 6 条消息后体验才像聊天助手；
+- 限流：问答要花 token，公开 demo 被刷会烧钱；按 IP 每分钟限 60 次，超限 429，健康检查放行。
+
 **降级策略（面试常问）**
 
 - 向量模型加载失败 → 自动退化为哈希向量（`HashEmbedder`），保证服务不挂；
@@ -288,7 +310,7 @@ RAG_DB_NAME=rag_kb
 2. 检索：混合检索（已支持）→ 向量库 HNSW 索引 + 多路召回；
 3. 切分：按格式（Markdown 标题、PDF 版面）结构化切分；
 4. 评估：当前 62 题偏小，可扩到 100+ 题、接入 RAGAS 自动评估生成质量；
-5. 工程：多轮对话、权限控制、限流、日志与监控、重排缓存。
+5. 工程：权限控制、日志与监控、重排缓存（已支持）、多轮对话（已支持）、限流（已支持）。
 
 ## Roadmap
 
@@ -296,7 +318,9 @@ RAG_DB_NAME=rag_kb
 - [x] 向量检索（bge-small-zh）+ BM25 混合检索（RRF 融合）
 - [x] LLM 重排 + 查询改写
 - [x] 检索评估（62 题，hit@1 / hit@3 / MRR，多配置对比）
-- [ ] 多轮对话上下文
+- [x] 流式回答（SSE，检索 trace + 回答逐字）
+- [x] 多轮对话上下文（前端携带最近几轮）
+- [x] 每 IP 限流（`RAG_RATE_LIMIT`）
 - [ ] 向量库（Chroma / FAISS）替换内存索引
 - [ ] 答案评分/反馈按钮
 - [ ] Docker 部署

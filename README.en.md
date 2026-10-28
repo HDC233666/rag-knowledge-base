@@ -25,14 +25,18 @@ An **out-of-the-box** RAG (Retrieval-Augmented Generation) knowledge-base Q&A ap
 | Auto chunking | Sentence-aware splitting + target size + overlap, so meaning is never cut in half |
 | Hybrid retrieval | BM25 (lexical) + vector search (bge-small-zh, CPU-only), fused with RRF |
 | Query rewriting | The LLM expands one question into several retrieval queries (multi-query recall) |
-| Reranking | LLM scores the candidates and puts the truly relevant ones first |
+| Reranking | LLM scoring (default) or bge cross-encoder (local CPU) reorders candidates |
+| Caching | Rewrite/rerank results cached in SQLite with TTL — repeat questions go from seconds to milliseconds |
 | Answers with citations | Answers carry `[1][2]` markers; the UI shows the source snippet and score of each citation |
 | Anti-hallucination | Prompt strictly says "if it's not in the materials, say so"; empty retrieval → refuse to answer |
 | Persistence | `data/db.json` by default; set MySQL vars to store in a database (see below) |
 | MySQL storage | Optional: documents + chunks in MySQL — table design, indexes, cascade delete; falls back to JSON if unreachable |
-| Retrieval eval | 28-question eval set + script: one command to compare BM25 / hybrid / rerank / rewrite on hit@1, hit@3, MRR |
+| Retrieval eval | 62-question eval set + script: one command to compare BM25 / hybrid / rerank / rewrite on hit@1, hit@3, MRR |
+| Streaming | `/api/ask/stream` over SSE: retrieval trace first, then the answer token by token |
+| Multi-turn | The frontend sends recent turns so follow-up questions keep context |
+| Rate limiting | Per-IP request cap (`RAG_RATE_LIMIT`), `429` when exceeded |
 | UI | Vanilla HTML/CSS/JS, no build step, dark mode supported, Markdown rendering |
-| Tests | pytest with 27 cases covering chunking / retrieval / fusion / reranking / API; GitHub Actions runs them automatically |
+| Tests | pytest with 33 cases covering chunking / retrieval / fusion / reranking / caching / API / streaming / rate limiting; GitHub Actions runs them automatically |
 
 ## Architecture
 
@@ -107,6 +111,12 @@ Open **http://127.0.0.1:8000**.
 | `RAG_RRF_K` | `60` | RRF fusion constant (empirical value from the paper) |
 | `RAG_ENABLE_REWRITE` | `1` | Query rewriting on/off; `0` saves one LLM call |
 | `RAG_ENABLE_RERANK` | `1` | LLM reranking on/off; `0` saves one LLM call |
+| `RAG_RERANK_BACKEND` | `llm` | `llm` (LLM scoring) or `cross` (bge cross-encoder, local CPU) |
+| `RAG_CROSS_ENCODER_MODEL` | `BAAI/bge-reranker-base` | Model used by the `cross` backend |
+| `RAG_ENABLE_CACHE` | `1` | Cache rewrite/rerank results in SQLite with TTL |
+| `RAG_CACHE_TTL` | `3600` | Cache TTL in seconds |
+| `RAG_CACHE_PATH` | `data/cache.db` | Cache file location (gitignored) |
+| `RAG_RATE_LIMIT` | `60` | Max questions per IP per minute; `0` disables |
 | `RAG_DB_HOST` | empty | Set it to use MySQL; empty = JSON file |
 | `RAG_DB_PORT` | `3306` | MySQL port |
 | `RAG_DB_USER` | `root` | Database user |
@@ -123,7 +133,19 @@ Open **http://127.0.0.1:8000**.
 | POST | `/api/documents` | Create a document (JSON: `{name, text}`) |
 | POST | `/api/upload` | Upload a file (multipart) |
 | DELETE | `/api/documents/{id}` | Delete a document |
-| POST | `/api/ask` | Ask a question (JSON: `{question, top_k?}`) |
+| POST | `/api/ask` | Ask a question (JSON: `{question, top_k?, history?}`) — one shot |
+| POST | `/api/ask/stream` | Same body, **SSE stream**: `trace` / `delta` / `done` events |
+
+SSE events (`data: {...}`):
+
+| Event | Payload | Meaning |
+|---|---|---|
+| `trace` | `{queries, rewrite, rerank, candidates, citations}` | Retrieval finished; citations and trace pushed first |
+| `delta` | `{text}` | Incremental answer text |
+| `done` | `{answer, citations, latency_ms, tokens, trace}` | Turn finished |
+| `error` | `{detail}` | Failure |
+
+Rate limiting: 60 questions per IP per minute by default (`RAG_RATE_LIMIT`, `0` disables). Over the limit returns `429`.
 
 Example:
 
@@ -161,7 +183,7 @@ rag-knowledge-base/
 │   └── smoke.py       # Real API smoke test
 ├── docs/
 │   └── LEARNING-RAG-ADVANCED.md  # Beginner-friendly deep dive (theory + eval + interview Q&A)
-├── tests/             # pytest tests (27 cases)
+├── tests/             # pytest tests (33 cases)
 └── .github/workflows/ci.yml
 ```
 
@@ -265,6 +287,12 @@ RAG_DB_NAME=rag_kb
 - Rewriting: user questions are colloquial and sparse; asking the LLM for 2–3 retrieval queries and fusing them clearly lifts hit rate (hit@1 0.73 → 0.77 on the eval set);
 - Both cost latency (milliseconds → seconds), so both are switches: measurable and easy to turn off.
 
+**Why streaming, multi-turn and rate limiting?**
+
+- Streaming: retrieval + generation takes 1–2 s, and the page sits blank until it finishes. Over SSE the retrieval trace and citations arrive first, then the answer streams token by token;
+- Multi-turn: follow-ups ("and its downsides?") would be treated as brand-new questions without context; the frontend sends the last few turns so it behaves like a chat assistant;
+- Rate limiting: answers cost tokens, and a public demo can be abused. Cap each IP per minute (`RAG_RATE_LIMIT`), return 429, and let health checks through.
+
 **Fallback strategy (a common interview question)**
 
 - Embedding model fails to load → degrade to the hash embedder (`HashEmbedder`) so the service keeps running;
@@ -280,7 +308,7 @@ Correctness is covered by tests: `tests/test_hybrid.py` and `tests/test_pipeline
 2. Retrieval: hybrid retrieval (supported) → HNSW index in a vector DB + multi-recall;
 3. Chunking: structure-aware splitting (Markdown headings, PDF layout);
 4. Evaluation: the current 62 questions are small — grow to 100+ and add RAGAS for generation quality;
-5. Engineering: multi-turn context, access control, rate limiting, logging & monitoring, rerank caching.
+5. Engineering: access control, logging & monitoring, rerank caching (done), multi-turn context (done), rate limiting (done).
 
 ## Roadmap
 
@@ -288,7 +316,9 @@ Correctness is covered by tests: `tests/test_hybrid.py` and `tests/test_pipeline
 - [x] Vector retrieval (bge-small-zh) + BM25 hybrid retrieval (RRF fusion)
 - [x] LLM reranking + query rewriting
 - [x] Retrieval evaluation (62 questions, hit@1 / hit@3 / MRR, multi-config comparison)
-- [ ] Multi-turn conversation context
+- [x] Streaming answers (SSE: retrieval trace + token deltas)
+- [x] Multi-turn conversation context (frontend sends recent turns)
+- [x] Per-IP rate limiting (`RAG_RATE_LIMIT`)
 - [ ] Vector DB (Chroma / FAISS) instead of the in-memory index
 - [ ] Answer rating / feedback button
 - [ ] Docker deployment
@@ -307,3 +337,4 @@ Correctness is covered by tests: `tests/test_hybrid.py` and `tests/test_pipeline
 ## License
 
 [MIT](LICENSE)
+

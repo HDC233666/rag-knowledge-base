@@ -49,3 +49,46 @@ def chat(messages: list[dict], temperature: float | None = None) -> dict:
             raise LLMError(f"DeepSeek 接口报错：{exc}") from exc
 
     raise LLMError(f"网络重试 3 次仍然失败：{last_error}")
+
+
+def chat_stream(messages: list[dict], temperature: float | None = None):
+    """流式对话：逐块 yield {"delta": 文本}，结束时 yield {"done": True, "tokens", "latency_ms"}。
+
+    用法：
+        for event in chat_stream(messages):
+            ...原样转发给前端（SSE）
+    """
+    client = get_client()
+    started = time.time()
+    kwargs = {
+        "model": DEEPSEEK_MODEL,
+        "messages": messages,
+        "temperature": TEMPERATURE if temperature is None else temperature,
+        "stream": True,
+    }
+    try:
+        try:
+            stream = client.chat.completions.create(**kwargs, stream_options={"include_usage": True})
+        except APIError as exc:
+            # 兼容不支持 stream_options 的网关：去掉它重试一次
+            if "stream_options" not in str(exc):
+                raise
+            stream = client.chat.completions.create(**kwargs)
+
+        tokens = None
+        for chunk in stream:
+            usage = getattr(chunk, "usage", None)
+            if usage is not None:
+                tokens = getattr(usage, "total_tokens", None)
+            choices = getattr(chunk, "choices", None) or []
+            if not choices:
+                continue
+            delta = getattr(choices[0], "delta", None)
+            text = getattr(delta, "content", None) if delta else None
+            if text:
+                yield {"delta": text}
+        yield {"done": True, "tokens": tokens, "latency_ms": int((time.time() - started) * 1000)}
+    except (APIConnectionError, APITimeoutError) as exc:
+        raise LLMError(f"网络连接失败：{exc}") from exc
+    except APIError as exc:
+        raise LLMError(f"DeepSeek 接口报错：{exc}") from exc

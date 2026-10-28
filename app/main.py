@@ -7,18 +7,23 @@
 
 from __future__ import annotations
 
+import json
+import time
+from collections import deque
 from contextlib import asynccontextmanager
+from typing import Literal
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import llm
-from .config import DATA_DIR, DEEPSEEK_API_KEY, DEEPSEEK_MODEL, STATIC_DIR
+from .config import DATA_DIR, DEEPSEEK_API_KEY, DEEPSEEK_MODEL, RATE_LIMIT_PER_MIN, STATIC_DIR
 from .db import make_store
 from .loaders import load_bytes
 from .rag import answer as rag_answer
+from .rag import answer_stream as rag_answer_stream
 
 store = make_store()
 
@@ -50,10 +55,37 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="RAG 知识库问答", version="1.0.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+# 限流：每个 IP 每分钟最多 RATE_LIMIT_PER_MIN 个 /api 请求（health 除外），进程内存储
+_rate_buckets: dict[str, deque] = {}
+
+
+@app.middleware("http")
+async def rate_limit(request: Request, call_next):
+    path = request.url.path
+    if RATE_LIMIT_PER_MIN > 0 and path.startswith("/api/") and not path.startswith("/api/health"):
+        ip = request.client.host if request.client else "unknown"
+        now = time.time()
+        bucket = _rate_buckets.setdefault(ip, deque())
+        while bucket and now - bucket[0] > 60:
+            bucket.popleft()
+        if len(bucket) >= RATE_LIMIT_PER_MIN:
+            return JSONResponse(
+                {"detail": f"请求太频繁了，请稍后再试（每 IP 每分钟 {RATE_LIMIT_PER_MIN} 次）"},
+                status_code=429,
+            )
+        bucket.append(now)
+    return await call_next(request)
+
+
+class Message(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=4000)
+
 
 class AskRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     top_k: int | None = Field(default=None, ge=1, le=10)
+    history: list[Message] = Field(default_factory=list, max_length=12)
 
 
 class DocumentIn(BaseModel):
@@ -122,9 +154,32 @@ def delete_document(doc_id: str) -> dict:
 
 @app.post("/api/ask")
 def ask(payload: AskRequest) -> dict:
+    history = [m.model_dump() for m in payload.history]
     try:
-        return rag_answer(payload.question, store.all_chunks(), payload.top_k)
+        return rag_answer(payload.question, store.all_chunks(), payload.top_k, history)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except llm.LLMError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/api/ask/stream")
+def ask_stream(payload: AskRequest):
+    """流式回答：SSE，每行一个 JSON 事件（trace / delta / done / error）。"""
+    history = [m.model_dump() for m in payload.history]
+    chunks = store.all_chunks()
+
+    def event_stream():
+        try:
+            for event in rag_answer_stream(payload.question, chunks, payload.top_k, history):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except ValueError as exc:
+            yield f"data: {json.dumps({'type': 'error', 'detail': str(exc)}, ensure_ascii=False)}\n\n"
+        except llm.LLMError as exc:
+            yield f"data: {json.dumps({'type': 'error', 'detail': str(exc)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

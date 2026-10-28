@@ -189,6 +189,8 @@ $("file").addEventListener("change", async (event) => {
 });
 
 /* ---------- 提问 ---------- */
+let conversation = []; // 多轮对话历史（只发给后端最近 6 条）
+
 function appendUser(text) {
   const node = document.createElement("div");
   node.className = "msg user";
@@ -197,36 +199,70 @@ function appendUser(text) {
   messages.scrollTop = messages.scrollHeight;
 }
 
-function appendBot(payload, loading = false) {
-  const node = document.createElement("div");
-  node.className = "msg bot";
+function paintBot(node, payload, loading = false) {
   const citations = (payload && payload.citations) || [];
   const badges = payload
     ? `<span class="badge">${payload.latency_ms} ms</span>${
         payload.tokens ? `<span class="badge">${payload.tokens} tokens</span>` : ""
       }`
     : "";
-  node.innerHTML = `
-    <div class="bubble">
-      ${loading ? '<span class="typing">知识库检索中…</span>' : renderMarkdown(payload.answer)}
-      <div class="citations">
-        ${citations
-          .map(
-            (c) => `
-          <div class="citation">
-            <span class="cite-id">[${c.index + 1}]</span>
-            <span class="cite-doc">${escapeHtml(c.doc_name)}</span>
-            <span class="cite-score">score ${c.score}</span>
-            <div class="cite-snippet">${escapeHtml(c.snippet)}…</div>
-          </div>`
-          )
-          .join("")}
-      </div>
-      <div class="badges">${badges}</div>
-    </div>`;
-  messages.appendChild(node);
+  node.querySelector(".bubble").innerHTML = loading
+    ? '<span class="typing">知识库检索中…</span>'
+    : renderMarkdown(payload.answer);
+  node.querySelector(".citations").innerHTML = citations
+    .map(
+      (c) => `
+      <div class="citation">
+        <span class="cite-id">[${c.index + 1}]</span>
+        <span class="cite-doc">${escapeHtml(c.doc_name)}</span>
+        <span class="cite-score">score ${c.score}</span>
+        <div class="cite-snippet">${escapeHtml(c.snippet)}…</div>
+      </div>`
+    )
+    .join("");
+  node.querySelector(".badges").innerHTML = badges;
   messages.scrollTop = messages.scrollHeight;
+}
+
+function appendBot(payload, loading = false) {
+  const node = document.createElement("div");
+  node.className = "msg bot";
+  node.innerHTML = `
+    <div class="bubble"></div>
+    <div class="citations"></div>
+    <div class="badges"></div>`;
+  messages.appendChild(node);
+  paintBot(node, payload, loading);
   return node;
+}
+
+/** 读取 SSE 流，每收到一个 data: {...} 事件就回调一次 */
+async function askStream(question, onEvent) {
+  const response = await fetch("/api/ask/stream", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question, history: conversation.slice(-6) }),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.detail || `请求失败（${response.status}）`);
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let index;
+    while ((index = buffer.indexOf("\n\n")) >= 0) {
+      const frame = buffer.slice(0, index);
+      buffer = buffer.slice(index + 2);
+      const line = frame.split("\n").find((item) => item.startsWith("data: "));
+      if (!line) continue;
+      onEvent(JSON.parse(line.slice(6)));
+    }
+  }
 }
 
 $("form").addEventListener("submit", async (event) => {
@@ -238,18 +274,35 @@ $("form").addEventListener("submit", async (event) => {
   textarea.value = "";
   appendUser(question);
   const pending = appendBot(null, true);
+  const bubble = pending.querySelector(".bubble");
+
+  let answerText = "";
+  let citations = [];
+  let latency = null;
+  let tokens = null;
 
   try {
-    const result = await api("/api/ask", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question }),
+    await askStream(question, (ev) => {
+      if (ev.type === "trace") {
+        bubble.innerHTML = '<span class="typing">已检索到资料，正在生成回答…</span>';
+      } else if (ev.type === "delta") {
+        answerText += ev.text;
+        bubble.innerHTML = renderMarkdown(answerText);
+        messages.scrollTop = messages.scrollHeight;
+      } else if (ev.type === "done") {
+        answerText = ev.answer || answerText;
+        citations = ev.citations || [];
+        latency = ev.latency_ms;
+        tokens = ev.tokens;
+      } else if (ev.type === "error") {
+        throw new Error(ev.detail || "生成失败");
+      }
     });
-    pending.remove();
-    appendBot(result);
+    paintBot(pending, { answer: answerText, citations, latency_ms: latency, tokens });
+    conversation.push({ role: "user", content: question });
+    conversation.push({ role: "assistant", content: answerText });
   } catch (error) {
-    pending.remove();
-    appendBot({ answer: `❌ ${error.message}`, citations: [] });
+    paintBot(pending, { answer: `❌ ${error.message}`, citations: [] });
   }
 });
 
