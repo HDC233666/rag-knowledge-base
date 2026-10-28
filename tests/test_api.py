@@ -93,7 +93,10 @@ def test_stream_answer(tmp_path, monkeypatch):
     assert response.headers["content-type"].startswith("text/event-stream")
 
     events = _parse_sse(response.text)
-    assert events[0]["type"] == "trace"
+    types = [e["type"] for e in events]
+    # 第一个事件可能是 stage（检索前提示），trace 必须出现
+    assert "trace" in types
+    assert types.index("trace") < len(types) - 1
     assert events[-1]["type"] == "done"
     delta_text = "".join(e["text"] for e in events if e["type"] == "delta")
     assert "RAG" in delta_text

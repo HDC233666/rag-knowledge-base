@@ -142,6 +142,7 @@ def answer_stream(question: str, chunks: list[dict], top_k: int | None = None, h
     if not question:
         raise ValueError("问题不能为空")
 
+    yield {"type": "stage", "text": "正在改写问题并检索知识库"}
     hits, trace = retrieve(question, chunks, top_k or TOP_K)
     if not hits:
         yield {"type": "trace", "trace": trace}
@@ -150,6 +151,7 @@ def answer_stream(question: str, chunks: list[dict], top_k: int | None = None, h
         return
 
     yield {"type": "trace", "trace": trace}
+    yield {"type": "stage", "text": f"已找到 {len(hits)} 个相关片段，正在生成回答"}
     started = time.time()
     parts: list[str] = []
     tokens = None

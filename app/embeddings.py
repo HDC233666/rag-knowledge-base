@@ -20,6 +20,7 @@ import numpy as np
 
 DIM = 512
 MODEL_NAME = os.getenv("RAG_EMBED_MODEL", "BAAI/bge-small-zh-v1.5")
+EMBED_CACHE_DIR = os.getenv("RAG_EMBED_CACHE", "").strip() or None  # 容器里指向挂载卷，避免每次重启重下模型
 # bge 中文模型官方建议：给「查询」加指令前缀，文档侧不加，检索效果更好
 QUERY_PREFIX = os.getenv("RAG_EMBED_QUERY_PREFIX", "为这个句子生成表示以用于检索相关文章：")
 
@@ -63,7 +64,7 @@ class FastEmbedEmbedder:
     def __init__(self, model_name: str = MODEL_NAME):
         from fastembed import TextEmbedding
 
-        self._model = TextEmbedding(model_name)
+        self._model = TextEmbedding(model_name, cache_dir=EMBED_CACHE_DIR)
         self.name = model_name
         self.dim = DIM
         self._query_cache: dict[str, np.ndarray] = {}

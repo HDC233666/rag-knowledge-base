@@ -391,6 +391,19 @@ $("form").addEventListener("submit", async (event) => {
   const pending = appendBot(null, true, question);
   const bubble = pending.querySelector(".bubble");
 
+  // 首字之前的等待期：显示当前阶段 + 已等待秒数，避免用户以为卡死
+  let stageText = "知识库检索中";
+  let waited = 0;
+  const tick = () => {
+    if (bubble.querySelector(".typing")) {
+      bubble.innerHTML = `<span class="typing">${stageText}…（已 ${waited}s）</span>`;
+    }
+  };
+  const timer = setInterval(() => {
+    waited += 1;
+    tick();
+  }, 1000);
+
   let answerText = "";
   let citations = [];
   let latency = null;
@@ -398,13 +411,19 @@ $("form").addEventListener("submit", async (event) => {
 
   try {
     await askStream(question, (ev) => {
-      if (ev.type === "trace") {
-        bubble.innerHTML = '<span class="typing">已检索到资料，正在生成回答…</span>';
+      if (ev.type === "stage") {
+        stageText = ev.text || stageText;
+        tick();
+      } else if (ev.type === "trace") {
+        stageText = "已找到资料，正在生成回答";
+        tick();
       } else if (ev.type === "delta") {
+        clearInterval(timer);
         answerText += ev.text;
         bubble.innerHTML = renderMarkdown(answerText);
         messages.scrollTop = messages.scrollHeight;
       } else if (ev.type === "done") {
+        clearInterval(timer);
         answerText = ev.answer || answerText;
         citations = ev.citations || [];
         latency = ev.latency_ms;
@@ -417,6 +436,7 @@ $("form").addEventListener("submit", async (event) => {
     conversation.push({ role: "user", content: question });
     conversation.push({ role: "assistant", content: answerText });
   } catch (error) {
+    clearInterval(timer);
     paintBot(pending, { answer: `❌ ${error.message}`, citations: [] });
   }
 });
