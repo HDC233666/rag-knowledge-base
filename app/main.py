@@ -24,6 +24,7 @@ from .db import make_store
 from .loaders import load_bytes
 from .rag import answer as rag_answer
 from .rag import answer_stream as rag_answer_stream
+from .vectorstore import backend_name as vector_backend_name
 
 store = make_store()
 
@@ -100,7 +101,12 @@ def index() -> FileResponse:
 
 @app.get("/api/health")
 def health() -> dict:
-    return {"ok": True, "model": DEEPSEEK_MODEL, "has_key": bool(DEEPSEEK_API_KEY)}
+    return {
+        "ok": True,
+        "model": DEEPSEEK_MODEL,
+        "has_key": bool(DEEPSEEK_API_KEY),
+        "vector_backend": vector_backend_name(),
+    }
 
 
 @app.get("/api/stats")

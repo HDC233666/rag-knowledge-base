@@ -48,6 +48,14 @@ CROSS_ENCODER_MODEL = os.getenv("RAG_CROSS_ENCODER_MODEL", "BAAI/bge-reranker-ba
 # 每个 IP 每分钟最多多少个 /api 请求（公网 demo 建议 30~60；0 = 不限制）
 RATE_LIMIT_PER_MIN = int(os.getenv("RAG_RATE_LIMIT", "60"))
 
+# ===== 向量索引（v4）=====
+# auto = 装了 faiss 用 FAISS HNSW，否则 numpy 精确检索；也可强制 numpy / faiss
+VECTOR_BACKEND = os.getenv("RAG_VECTOR_BACKEND", "auto").strip().lower()
+# HNSW 每个节点的连边数 M：越大越准、越占内存（一般 16~64）
+FAISS_HNSW_M = int(os.getenv("RAG_FAISS_M", "32"))
+# 查询时搜索的候选数 efSearch：越大越准、越慢
+FAISS_EF_SEARCH = int(os.getenv("RAG_FAISS_EF_SEARCH", "64"))
+
 # ===== 存储后端 =====
 # 留空 = 用 JSON 文件（默认，零配置）；填了 = 用 MySQL，连不上会自动降级 JSON
 DB_HOST = os.getenv("RAG_DB_HOST", "").strip()

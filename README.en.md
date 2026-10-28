@@ -24,6 +24,7 @@ An **out-of-the-box** RAG (Retrieval-Augmented Generation) knowledge-base Q&A ap
 | Document upload | txt / md / pdf / csv / log, up to 20 MB per file |
 | Auto chunking | Sentence-aware splitting + target size + overlap, so meaning is never cut in half |
 | Hybrid retrieval | BM25 (lexical) + vector search (bge-small-zh, CPU-only), fused with RRF |
+| Vector index | numpy exact search by default (zero deps); FAISS HNSW kicks in automatically when installed (`RAG_VECTOR_BACKEND=numpy/faiss/auto`) |
 | Query rewriting | The LLM expands one question into several retrieval queries (multi-query recall) |
 | Reranking | LLM scoring (default) or bge cross-encoder (local CPU) reorders candidates |
 | Caching | Rewrite/rerank results cached in SQLite with TTL — repeat questions go from seconds to milliseconds |
@@ -31,12 +32,13 @@ An **out-of-the-box** RAG (Retrieval-Augmented Generation) knowledge-base Q&A ap
 | Anti-hallucination | Prompt strictly says "if it's not in the materials, say so"; empty retrieval → refuse to answer |
 | Persistence | `data/db.json` by default; set MySQL vars to store in a database (see below) |
 | MySQL storage | Optional: documents + chunks in MySQL — table design, indexes, cascade delete; falls back to JSON if unreachable |
-| Retrieval eval | 62-question eval set + script: one command to compare BM25 / hybrid / rerank / rewrite on hit@1, hit@3, MRR |
+| Retrieval eval | 100-question eval set + script: one command to compare BM25 / hybrid / rerank / rewrite on hit@1, hit@3, MRR |
+| Generation eval | End-to-end generation + LLM-as-a-judge scoring: faithfulness / relevance / citation quality, RAGAS-style |
 | Streaming | `/api/ask/stream` over SSE: retrieval trace first, then the answer token by token |
 | Multi-turn | The frontend sends recent turns so follow-up questions keep context |
 | Rate limiting | Per-IP request cap (`RAG_RATE_LIMIT`), `429` when exceeded |
 | UI | Vanilla HTML/CSS/JS, no build step, dark mode supported, Markdown rendering |
-| Tests | pytest with 33 cases covering chunking / retrieval / fusion / reranking / caching / API / streaming / rate limiting; GitHub Actions runs them automatically |
+| Tests | pytest with 39 cases covering chunking / retrieval / fusion / reranking / caching / API / streaming / rate limiting; GitHub Actions runs them automatically |
 
 ## Architecture
 
@@ -107,6 +109,9 @@ Open **http://127.0.0.1:8000**.
 | `RAG_EMBED_MODEL` | `BAAI/bge-small-zh-v1.5` | Embedding model (CPU-friendly, 512 dims); vectors rebuild automatically when changed |
 | `RAG_EMBED_BACKEND` | `auto` | `hash` forces the dependency-free hash embedder (CI / offline) |
 | `RAG_EMBED_QUERY_PREFIX` | bge instruction | Query-side instruction prefix recommended for bge models; may be left empty |
+| `RAG_VECTOR_BACKEND` | `auto` | Vector index: `auto` (FAISS when available) / `numpy` (exact) / `faiss` (HNSW) |
+| `RAG_FAISS_M` | `32` | HNSW links per node: higher = more accurate, more memory |
+| `RAG_FAISS_EF_SEARCH` | `64` | HNSW search width: higher = more accurate, slower |
 | `RAG_CANDIDATE_K` | `12` | Candidates recalled by BM25 and by vectors before fusion |
 | `RAG_RRF_K` | `60` | RRF fusion constant (empirical value from the paper) |
 | `RAG_ENABLE_REWRITE` | `1` | Query rewriting on/off; `0` saves one LLM call |
@@ -195,26 +200,35 @@ pytest -q
 
 ## Retrieval evaluation
 
-The repo ships 62 questions (paraphrased, section-targeted and distractor-aware) and `scripts/evaluate.py`, which runs four configurations and prints retrieval quality side by side:
+The repo ships 100 questions (basics, paraphrases, advanced concepts, section-targeted and distractor questions) and `scripts/evaluate.py`, which runs four configurations and prints retrieval quality side by side:
 
 ```bash
-python scripts/evaluate.py          # requires a key in .env (rerank/rewrite call the LLM)
+python scripts/evaluate.py          # 100 questions; requires a key in .env (rerank/rewrite call the LLM)
 python scripts/evaluate.py --no-llm # BM25 vs hybrid only, no API cost
 ```
 
 Metrics: **hit@1** = share of questions whose gold chunk ranks first; **hit@3** = ranks in the top 3; **MRR** = mean reciprocal rank of the gold chunk.
 
-Baseline (14 chunks, 62 questions, bge-small-zh):
+Baseline (14 chunks, 100 questions, bge-small-zh):
 
 | Configuration | hit@1 | hit@3 | MRR | Latency |
 |---|---|---|---|---|
-| BM25 only | 0.66 | 0.90 | 0.767 | 4 ms |
-| Hybrid recall (BM25 + vectors, RRF) | 0.66 | 0.90 | 0.781 | 19 ms |
-| Hybrid + LLM rerank | 0.73 | 0.94 | 0.831 | 1.45 s |
-| Hybrid + query rewriting + rerank | **0.77** | **0.97** | **0.864** | 2.63 s |
+| BM25 only | **0.72** | 0.93 | 0.818 | 3 ms |
+| Hybrid recall (BM25 + vectors, RRF) | 0.67 | 0.91 | 0.790 | 14 ms |
+| Hybrid + LLM rerank | 0.74 | 0.94 | 0.838 | 1.49 s |
+| Hybrid + query rewriting + rerank | **0.75** | **0.96** | **0.848** | 2.64 s |
 
-> Takeaway: on a small corpus BM25 is already strong (most questions contain the exact terms), so most of the gain comes from **reranking and query rewriting**. Hybrid recall moves MRR 0.767 → 0.781 (vectors cover the "different wording" questions) while hit@1 / hit@3 stay flat — which is exactly why you need an eval set: without it you cannot tell whether a change helped or just churned.
-> Latency grows from 4 ms to 2.6 s because rerank and rewrite call the LLM; that is why the pipeline caches both (see below).
+Breakdown by question type makes it clear who each change helps (hit@1):
+
+| Question group | # | BM25 only | Hybrid | Hybrid + rerank |
+|---|---|---|---|---|
+| Basics q01–q20 | 20 | 0.70 | 0.65 | **0.80** |
+| Paraphrases q21–q28 (colloquial / reworded) | 8 | 0.25 | **0.50** | **0.62** |
+| Advanced concepts q29–q62 | 34 | **0.74** | 0.71 | 0.71 |
+| Section / distractor q63–q100 | 38 | **0.82** | 0.68 | 0.76 |
+
+> This table is more interesting than the total: **on paraphrase questions BM25 scores only 0.25, hybrid recall doubles it to 0.50 and rerank lifts it to 0.62** — that is the problem vectors + rerank actually solve. Conversely, section questions are largely copied from headings/keywords, where BM25 is close to copying from an open book (0.82) and semantic changes only dilute the lexical edge.
+> Hence: never quote a single total. On a small corpus the total hides structural differences, so evaluate per group. The cost is visible too — latency grows from 3 ms to 2.6 s because rerank and rewrite call the LLM; in production, cache the expensive parts (see below).
 
 ### Cache
 
@@ -233,6 +247,34 @@ Rewrite and rerank results are cached in SQLite keyed by question + candidate fi
 | `cross` | local bge-reranker cross-encoder (fastembed/ONNX) | tens of ms | ~100 MB model download |
 
 If the `cross` model cannot be downloaded or inference fails, the pipeline silently falls back to `llm` reranking.
+
+### Generation quality evaluation (LLM-as-a-judge)
+
+Retrieval metrics only tell you whether the right chunk was found; users see the answer. `scripts/evaluate_generation.py` runs the full RAG pipeline on each question and asks a judge model to score it, RAGAS-style:
+
+```bash
+python scripts/evaluate_generation.py --limit 20   # 20 questions, 2 LLM calls each (generate + judge)
+```
+
+| Metric | Meaning | Score (20 questions, 0-100) |
+|---|---|---|
+| Faithfulness | Are the answer's claims supported by the cited source text? | **100** |
+| Answer relevance | Does it directly and fully answer the question? | **99** |
+| Citation quality | Do the cited chunks actually support the answer? | **97** |
+| Refusal | When the corpus really does not cover it, does it say so honestly? | 1 / 20 |
+
+> Two honest caveats:
+> 1. The judge receives the **full retrieved chunk text**, not the 160-char snippet shown in the UI — otherwise it mistakes "the snippet does not cover the claim" for "the model hallucinated". The first version of this script fell into exactly that trap and scored 65 / 75 / 63;
+> 2. The judge is the **same model** being evaluated, so it is lenient. Absolute numbers only show a trend; this is useful for A/B comparisons (prompt changes, model swaps, reranking on/off). In production, use a stronger judge model plus human spot checks.
+
+### Vector index backends (numpy / FAISS)
+
+| Backend | Suitable size | Notes |
+|---|---|---|
+| `numpy` (default fallback) | up to a few thousand chunks | one matrix multiply gives exact cosine scores; zero dependencies |
+| `faiss` (HNSW) | 10k+ chunks | approximate nearest neighbour, near-logarithmic queries; `M` controls links per node, `efSearch` controls search width — both trade accuracy for speed |
+
+With `RAG_VECTOR_BACKEND=auto`: FAISS HNSW is used when installed; otherwise (or if index creation fails) it silently falls back to numpy. The sample corpus only has 14 chunks, so latency differences are negligible — **the point of FAISS is scale**, and the exercise here is to show *when* to switch indexes, not to shave microseconds.
 
 ## Optional: MySQL storage
 
@@ -284,8 +326,20 @@ RAG_DB_NAME=rag_kb
 **Why LLM reranking and query rewriting?**
 
 - Reranking: recall favors "don't miss" (top-12), rerank favors "rank precisely" (the LLM scores each candidate, take top-4);
-- Rewriting: user questions are colloquial and sparse; asking the LLM for 2–3 retrieval queries and fusing them clearly lifts hit rate (hit@1 0.73 → 0.77 on the eval set);
+- Rewriting: user questions are colloquial and sparse; asking the LLM for 2–3 retrieval queries and fusing them lifts hit rate (paraphrase questions 0.50 → 0.62, overall 0.74 → 0.75);
 - Both cost latency (milliseconds → seconds), so both are switches: measurable and easy to turn off.
+
+**Why grow the eval set to 100 questions — and split it by type?**
+
+- Going from 62 to 100 questions changes the mix (more concept and distractor questions), so absolute scores shift — the exam changed, not the model. Always report the size and composition;
+- A single total can make "BM25 beats hybrid" look true (0.72 vs 0.67), because many questions reuse the document's exact terms — lexical matching is nearly cheating there;
+- Split by group and the story gets honest: **paraphrases 0.25 → 0.50 (hybrid) → 0.62 (rerank)**, while section questions stay at 0.82 for BM25. In an interview, "how I noticed the eval set was biased and how I attributed gains per group" beats reciting a strong total.
+
+**Why add a FAISS vector index?**
+
+- numpy exact search is O(N·D): beyond tens of thousands of chunks every query scans the whole corpus and latency grows linearly;
+- FAISS HNSW builds a multi-layer graph for approximate nearest neighbours, near-logarithmic queries, at the cost of recall < 100% (tune `efSearch` to trade accuracy);
+- Shipped as an `auto` backend with graceful fallback to numpy: zero dependencies on small corpora, and a demonstrable answer to "what do you switch when the corpus grows" — the same retrieval interface with two implementations is the "evolvable architecture" this kind of project should show.
 
 **Why streaming, multi-turn and rate limiting?**
 
@@ -307,7 +361,7 @@ Correctness is covered by tests: `tests/test_hybrid.py` and `tests/test_pipeline
 1. Storage: JSON (default) → MySQL (supported) → vector DB (Chroma / Milvus);
 2. Retrieval: hybrid retrieval (supported) → HNSW index in a vector DB + multi-recall;
 3. Chunking: structure-aware splitting (Markdown headings, PDF layout);
-4. Evaluation: the current 62 questions are small — grow to 100+ and add RAGAS for generation quality;
+4. Evaluation: already 100 questions with per-group attribution and an LLM-judge generation eval; next steps are official RAGAS metrics and a human spot-check set;
 5. Engineering: access control, logging & monitoring, rerank caching (done), multi-turn context (done), rate limiting (done).
 
 ## Roadmap
@@ -319,7 +373,9 @@ Correctness is covered by tests: `tests/test_hybrid.py` and `tests/test_pipeline
 - [x] Streaming answers (SSE: retrieval trace + token deltas)
 - [x] Multi-turn conversation context (frontend sends recent turns)
 - [x] Per-IP rate limiting (`RAG_RATE_LIMIT`)
-- [ ] Vector DB (Chroma / FAISS) instead of the in-memory index
+- [x] Vector index backends: numpy exact / FAISS HNSW approximate (graceful fallback)
+- [x] Eval set grown to 100 questions with per-group attribution
+- [x] Generation quality evaluation (faithfulness / relevance / citation, LLM-as-a-judge)
 - [ ] Answer rating / feedback button
 - [ ] Docker deployment
 
