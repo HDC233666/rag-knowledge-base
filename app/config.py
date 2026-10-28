@@ -25,6 +25,16 @@ CHUNK_SIZE = int(os.getenv("RAG_CHUNK_SIZE", "600"))
 CHUNK_OVERLAP = int(os.getenv("RAG_CHUNK_OVERLAP", "80"))
 TEMPERATURE = float(os.getenv("RAG_TEMPERATURE", "0.2"))
 
+# ===== 检索增强（v2）=====
+# 候选池：BM25 和向量各召回多少个，再融合、重排
+CANDIDATE_K = int(os.getenv("RAG_CANDIDATE_K", "12"))
+# RRF 融合常数，论文经验值 60
+RRF_K = int(os.getenv("RAG_RRF_K", "60"))
+# 查询改写（多查询召回）：关掉可省一次 LLM 调用
+ENABLE_REWRITE = os.getenv("RAG_ENABLE_REWRITE", "1").lower() not in {"0", "false", "off", "no"}
+# LLM 重排：关掉可省一次 LLM 调用
+ENABLE_RERANK = os.getenv("RAG_ENABLE_RERANK", "1").lower() not in {"0", "false", "off", "no"}
+
 # ===== 存储后端 =====
 # 留空 = 用 JSON 文件（默认，零配置）；填了 = 用 MySQL，连不上会自动降级 JSON
 DB_HOST = os.getenv("RAG_DB_HOST", "").strip()

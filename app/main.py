@@ -24,13 +24,17 @@ store = make_store()
 
 
 def _seed_sample_docs() -> None:
-    """首次启动时把 data/sample 里的示例文档导入，方便直接体验。"""
-    if store.stats()["documents"] > 0:
-        return
+    """启动时同步 data/sample 里的示例文档：缺的补进来，已有的跳过。
+
+    这样升级知识库（新增示例文档）后重启即可自动导入，不用手动清库。
+    """
     sample_dir = DATA_DIR / "sample"
     if not sample_dir.exists():
         return
+    existing = {doc["name"] for doc in store.list_documents()}
     for path in sorted(sample_dir.glob("*.md")):
+        if path.name in existing:
+            continue
         try:
             store.add(path.name, path.read_text(encoding="utf-8"))
         except ValueError:

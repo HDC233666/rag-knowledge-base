@@ -2,11 +2,12 @@
 
 > [English version](README.en.md)
 
-一个**开箱即用**的 RAG（检索增强生成）知识库问答系统：上传文档 → 自动切分 → 检索 → 让大模型基于资料回答，并标注引用来源。
+一个**开箱即用**的 RAG（检索增强生成）知识库问答系统：上传文档 → 自动切分 → 混合检索（BM25 + 向量）→ 查询改写 + 重排 → 让大模型基于资料回答，并标注引用来源。
 
-- 纯 Python，**不需要 GPU**，不需要向量数据库，`pip install` 五分钟跑起来
+- 纯 Python，**不需要 GPU**，不需要独立向量数据库，`pip install` 五分钟跑起来
+- 检索链路可拆可换：BM25 / 向量检索 / RRF 融合 / LLM 重排 / 查询改写，每一层都能单独关掉做对比
 - 前端 + 后端 + 测试 + CI 齐全，适合作为**实习/求职项目**
-- 中文场景优化：按句切分、中文分词、引用可追溯
+- 中文场景优化：按句切分、中文分词、bge 中文向量模型、引用可追溯
 
 [![CI](https://github.com/your-name/rag-knowledge-base/actions/workflows/ci.yml/badge.svg)](https://github.com/your-name/rag-knowledge-base/actions/workflows/ci.yml)
 ![License](https://img.shields.io/badge/license-MIT-blue)
@@ -20,28 +21,39 @@
 |---|---|
 | 文档上传 | 支持 txt / md / pdf / csv / log，单文件 ≤ 20MB |
 | 自动切分 | 按句切分 + 目标字数 + 重叠，避免语义被切断 |
-| 检索 | BM25（纯 Python，毫秒级），中文单字 + 二元组分词 |
+| 混合检索 | BM25（词频）+ 向量检索（bge-small-zh，CPU 可跑），RRF 融合两路排名 |
+| 查询改写 | 让大模型把一个问题改写成多个检索式（多查询召回），提升召回率 |
+| 重排 | 对候选片段做 LLM 打分重排，把真正相关的排到前面 |
 | 回答 + 引用 | 回答里带 `[1][2]` 编号，界面展示每条引用的来源片段和得分 |
 | 防幻觉 | 提示词强约束「资料里没有就说没有」；检索为空时直接拒答 |
 | 持久化 | 默认存 `data/db.json`，重启不丢；配置 MySQL 后存数据库（见「接入 MySQL」） |
 | MySQL 存储 | 可选：文档 + 切分块入库，演示表设计、索引、外键级联；连不上自动降级 JSON |
+| 检索评估 | 内置 28 题评估集 + 脚本，一键对比 BM25 / 混合 / 重排 / 改写的 hit@1、hit@3、MRR |
 | 界面 | 原生 HTML/CSS/JS，无构建工具，支持深色模式，回答自动渲染 Markdown |
-| 测试 | pytest，覆盖切分/检索/接口；GitHub Actions 自动跑 |
+| 测试 | pytest，27 个用例覆盖切分/检索/融合/重排/接口；GitHub Actions 自动跑 |
 
 ## 架构
 
 ```mermaid
 flowchart LR
     A[用户提问] --> B[FastAPI /api/ask]
-    B --> C[BM25 检索<br/>top-k 片段]
-    C --> D[拼上下文<br/>参考资料]
+    B --> R[查询改写<br/>LLM 生成多个检索式]
+    R --> C1[BM25 召回<br/>稀疏检索]
+    R --> C2[向量召回<br/>bge-small-zh]
+    C1 --> F[RRF 融合<br/>多路排名合并]
+    C2 --> F
+    F --> G[LLM 重排<br/>top-k 精排]
+    G --> D[拼上下文<br/>参考资料]
     D --> E[DeepSeek 大模型]
-    E --> F[回答 + 引用]
-    U[上传文档] --> G[文本抽取<br/>pdf/md/txt]
-    G --> H[切分 chunk<br/>重叠]
-    H --> I[存入 db.json<br/>或 MySQL]
-    I --> C
+    E --> H[回答 + 引用 + trace]
+    U[上传文档] --> I[文本抽取<br/>pdf/md/txt]
+    I --> J[切分 chunk<br/>重叠]
+    J --> K[存入 db.json<br/>或 MySQL]
+    K --> C1
+    K --> C2
 ```
+
+> 任一环节都可以用 `.env` 关掉（`RAG_ENABLE_REWRITE=0` / `RAG_ENABLE_RERANK=0`），关掉后自动降级，方便做消融对比。
 
 ## 快速开始
 
@@ -86,6 +98,13 @@ uvicorn app.main:app --reload
 | `RAG_CHUNK_SIZE` | `600` | 每块目标字数 |
 | `RAG_CHUNK_OVERLAP` | `80` | 相邻块重叠字数 |
 | `RAG_TEMPERATURE` | `0.2` | 回答温度 |
+| `RAG_EMBED_MODEL` | `BAAI/bge-small-zh-v1.5` | 向量模型（CPU 可跑，512 维）；换模型后向量自动重建 |
+| `RAG_EMBED_BACKEND` | `auto` | 设 `hash` 强制用零依赖哈希向量（CI/无网环境用） |
+| `RAG_EMBED_QUERY_PREFIX` | bge 查询指令 | bge 系列查询侧建议加的指令前缀，换模型可留空 |
+| `RAG_CANDIDATE_K` | `12` | BM25 与向量各召回多少候选，再融合 |
+| `RAG_RRF_K` | `60` | RRF 融合常数（论文经验值） |
+| `RAG_ENABLE_REWRITE` | `1` | 查询改写开关；`0` = 省一次大模型调用 |
+| `RAG_ENABLE_RERANK` | `1` | LLM 重排开关；`0` = 省一次大模型调用 |
 | `RAG_DB_HOST` | 空 | 填了就用 MySQL；留空用 JSON 文件 |
 | `RAG_DB_PORT` | `3306` | MySQL 端口 |
 | `RAG_DB_USER` | `root` | 数据库账号 |
@@ -121,16 +140,26 @@ rag-knowledge-base/
 │   ├── config.py      # 配置（环境变量 / .env）
 │   ├── loaders.py     # 文件 → 文本（pdf/md/txt）
 │   ├── chunking.py    # 文本切分（句子 + 重叠）
-│   ├── retrieval.py   # BM25 检索
+│   ├── embeddings.py  # 向量模型（bge-small-zh / 哈希降级）
+│   ├── vectorstore.py # 向量索引（numpy 余弦检索）
+│   ├── retrieval.py   # BM25 + 向量混合检索（RRF 融合）
+│   ├── rewrite.py     # 查询改写（多查询）
+│   ├── rerank.py      # LLM 重排
 │   ├── store.py       # 文档仓库（JSON 实现，默认）
 │   ├── db.py          # MySQL 存储实现 + 自动降级
 │   ├── llm.py         # 调用 DeepSeek（重试 + 报错）
-│   └── rag.py         # RAG 主流程（检索→拼上下文→生成）
+│   └── rag.py         # RAG 主流程（改写→混合召回→融合→重排→生成）
 ├── static/            # 前端（无构建工具）
 ├── data/
-│   ├── sample/        # 示例知识库
+│   ├── sample/        # 示例知识库（含干扰文档，评估用）
+│   ├── eval/          # 评估集（questions.json）与报告（report.json）
 │   └── db.json        # 运行时生成（已 gitignore；用 MySQL 时不生成）
-├── tests/             # pytest 测试
+├── scripts/
+│   ├── evaluate.py    # 检索评估：hit@1 / hit@3 / MRR 多配置对比
+│   └── smoke.py       # 真实接口冒烟
+├── docs/
+│   └── LEARNING-RAG-ADVANCED.md  # 面向零基础的进阶讲解（原理 + 评估 + 面试问答）
+├── tests/             # pytest 测试（27 个用例）
 └── .github/workflows/ci.yml
 ```
 
@@ -139,6 +168,29 @@ rag-knowledge-base/
 ```bash
 pytest -q
 ```
+
+## 检索评估
+
+内置 28 道题（含 8 道「换个说法」的语义题）和 `scripts/evaluate.py`，一次跑四种配置，直接对比检索质量：
+
+```bash
+python scripts/evaluate.py          # 需要 .env 里配好 Key（重排/改写要用大模型）
+python scripts/evaluate.py --no-llm # 只对比 BM25 与混合检索，不花钱
+```
+
+指标说明：**hit@1** = 正确片段排第 1 的比例；**hit@3** = 排进前 3 的比例；**MRR** = 正确片段排名的倒数均值（越接近 1 越好）。
+
+当前基线（14 个切片、28 道题、bge-small-zh）：
+
+| 配置 | hit@1 | hit@3 | MRR | 平均延迟 |
+|---|---|---|---|---|
+| 纯 BM25 | 0.57 | 0.93 | 0.720 | 4 ms |
+| 混合召回（BM25 + 向量，RRF） | 0.61 | 0.89 | 0.750 | 29 ms |
+| 混合召回 + LLM 重排 | 0.75 | 0.93 | 0.842 | 1.4 s |
+| 混合召回 + 查询改写 + 重排 | **0.82** | **0.93** | **0.884** | 2.6 s |
+
+> 结论：小语料上 BM25 本身就不弱（词面匹配多），**收益主要来自「重排」和「查询改写」**；混合召回提升 hit@1 / MRR，但会让 hit@3 略降——这正是评估集的意义：不上评估，你无法知道改动到底是提升还是折腾。
+> 延迟从 4ms 涨到 2.6s，是因为重排和改写都调用了大模型；生产环境可以只对候选集做重排、把改写缓存起来。
 
 ## 进阶：接入 MySQL（可选）
 
@@ -180,26 +232,44 @@ RAG_DB_NAME=rag_kb
 
 ## 设计说明
 
-**为什么用 BM25 而不是向量检索？**
+**为什么从 BM25 升级到混合检索（而不是一把梭上向量）？**
 
-- 零依赖：不用下载 embedding 模型（动辄 100MB+）、不用搭向量库；
-- 够用：单机小知识库场景，BM25 效果不差且毫秒级返回；
-- 可替换：`app/retrieval.py` 只有一个 `search()` 函数，想换 FAISS / Chroma / Milvus 只需替换实现，`rag.py` 不用动。
+- BM25 是词面匹配，毫秒级、零依赖，在「问题里带着原文关键词」时非常准；
+- 向量检索补的是「换个说法」：用户说「资料更新了模型还在答旧的」，文档里写的是「外挂知识库能随时更新」，词面不重合，向量能对上；
+- 两路各召回 `RAG_CANDIDATE_K` 个候选，用 **RRF（Reciprocal Rank Fusion）** 按排名融合——它只看名次不看分数，天然避免「BM25 分和余弦相似度量纲不同」的问题，`score = Σ 1/(k + rank)`；
+- 向量模型选 `bge-small-zh-v1.5`：512 维、CPU 可跑、中文效果好，不需要 GPU 和独立向量库；查询侧按 bge 官方建议加指令前缀，文档侧不加。
+
+**为什么加 LLM 重排和查询改写？**
+
+- 重排：召回阶段追求「别漏」（top-12 宽召回），重排阶段追求「排得准」（LLM 给候选打相关性分，取前 4）；
+- 改写：用户问题往往口语化、信息少，让大模型改写成 2–3 个检索式分别召回再融合，能明显提升命中率（评估集上 hit@1 从 0.75 → 0.82）；
+- 两者都靠大模型，代价是延迟（毫秒级 → 秒级），所以做成开关，可评估、可关闭。
+
+**降级策略（面试常问）**
+
+- 向量模型加载失败 → 自动退化为哈希向量（`HashEmbedder`），保证服务不挂；
+- 某一路检索异常 → 退化为纯 BM25；
+- 重排/改写输出不是合法 JSON → 保留原顺序（重排）或退回原问题（改写）；
+- MySQL 连不上 → 退化为 JSON 存储。
+
+正确性靠测试保证：`tests/test_hybrid.py`、`tests/test_pipeline.py` 覆盖了融合排序、坏输出兜底、trace 字段等边界。
 
 **如何扩展到生产可用？**
 
-1. 检索：BM25 → 混合检索（BM25 + 向量）+ rerank；
-2. 存储：JSON（默认）→ MySQL（已支持）→ 向量库；
+1. 存储：JSON（默认）→ MySQL（已支持）→ 向量库（Chroma / Milvus）；
+2. 检索：混合检索（已支持）→ 向量库 HNSW 索引 + 多路召回；
 3. 切分：按格式（Markdown 标题、PDF 版面）结构化切分；
-4. 评估：加一套 RAGAS 评估集，回归测试效果；
-5. 工程：多轮对话、权限控制、限流、日志与监控。
+4. 评估：当前 28 题偏小，可扩到 100+ 题、接入 RAGAS 自动评估生成质量；
+5. 工程：多轮对话、权限控制、限流、日志与监控、重排缓存。
 
 ## Roadmap
 
 - [x] MySQL 存储后端（documents / chunks 两张表）
-- [ ] 向量检索（FAISS/Chroma）+ 混合检索
+- [x] 向量检索（bge-small-zh）+ BM25 混合检索（RRF 融合）
+- [x] LLM 重排 + 查询改写
+- [x] 检索评估（28 题，hit@1 / hit@3 / MRR，多配置对比）
 - [ ] 多轮对话上下文
-- [ ] 文档删除后的索引一致性校验
+- [ ] 向量库（Chroma / FAISS）替换内存索引
 - [ ] 答案评分/反馈按钮
 - [ ] Docker 部署
 
@@ -211,7 +281,7 @@ RAG_DB_NAME=rag_kb
 
 - **报错 `没有找到 DEEPSEEK_API_KEY`**：检查 `.env` 是否在项目根目录、是否填了值；或设置系统环境变量后重启终端。
 - **接口报 404 / model not found**：`.env` 里的 `DEEPSEEK_MODEL` 换回 `deepseek-chat`。
-- **回答「知识库里没有找到」**：先确认侧边栏有文档；中文检索对同义词不敏感，可以换个关键词问。
+- **回答「知识库里没有找到」**：先确认侧边栏有文档；换了说法的问题一般也能被混合检索找到，若仍不行，换个更贴近原文的关键词再问。
 - **PDF 抽不出文字**：扫描版 PDF 是图片，需要 OCR（本项目暂不支持）。
 
 ## 许可证

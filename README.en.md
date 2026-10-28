@@ -2,11 +2,12 @@
 
 > [中文版](README.md)
 
-An **out-of-the-box** RAG (Retrieval-Augmented Generation) knowledge-base Q&A app: upload documents → auto-chunk → retrieve → let the LLM answer from your materials, with traceable citations.
+An **out-of-the-box** RAG (Retrieval-Augmented Generation) knowledge-base Q&A app: upload documents → auto-chunk → hybrid retrieval (BM25 + embeddings) → query rewriting + reranking → let the LLM answer from your materials, with traceable citations.
 
-- Pure Python — **no GPU**, no vector database, running in 5 minutes with `pip install`
+- Pure Python — **no GPU**, no standalone vector database, running in 5 minutes with `pip install`
+- Every retrieval stage is pluggable: BM25 / vector search / RRF fusion / LLM rerank / query rewriting — each can be switched off for ablation
 - Frontend + backend + tests + CI included — a solid **internship / job-hunting project**
-- Chinese-first optimizations: sentence-aware chunking, Chinese tokenizer, traceable citations
+- Chinese-first optimizations: sentence-aware chunking, Chinese tokenizer, bge Chinese embeddings, traceable citations
 
 [![CI](https://github.com/your-name/rag-knowledge-base/actions/workflows/ci.yml/badge.svg)](https://github.com/your-name/rag-knowledge-base/actions/workflows/ci.yml)
 ![License](https://img.shields.io/badge/license-MIT-blue)
@@ -20,28 +21,39 @@ An **out-of-the-box** RAG (Retrieval-Augmented Generation) knowledge-base Q&A ap
 |---|---|
 | Document upload | txt / md / pdf / csv / log, up to 20 MB per file |
 | Auto chunking | Sentence-aware splitting + target size + overlap, so meaning is never cut in half |
-| Retrieval | BM25 in pure Python (millisecond latency), Chinese single-char + bigram tokenizer |
+| Hybrid retrieval | BM25 (lexical) + vector search (bge-small-zh, CPU-only), fused with RRF |
+| Query rewriting | The LLM expands one question into several retrieval queries (multi-query recall) |
+| Reranking | LLM scores the candidates and puts the truly relevant ones first |
 | Answers with citations | Answers carry `[1][2]` markers; the UI shows the source snippet and score of each citation |
 | Anti-hallucination | Prompt strictly says "if it's not in the materials, say so"; empty retrieval → refuse to answer |
 | Persistence | `data/db.json` by default; set MySQL vars to store in a database (see below) |
 | MySQL storage | Optional: documents + chunks in MySQL — table design, indexes, cascade delete; falls back to JSON if unreachable |
-| UI | Vanilla HTML/CSS/JS, no build step, dark mode supported |
-| Tests | pytest covering chunking / retrieval / API; GitHub Actions runs them automatically |
+| Retrieval eval | 28-question eval set + script: one command to compare BM25 / hybrid / rerank / rewrite on hit@1, hit@3, MRR |
+| UI | Vanilla HTML/CSS/JS, no build step, dark mode supported, Markdown rendering |
+| Tests | pytest with 27 cases covering chunking / retrieval / fusion / reranking / API; GitHub Actions runs them automatically |
 
 ## Architecture
 
 ```mermaid
 flowchart LR
     A[User question] --> B[FastAPI /api/ask]
-    B --> C[BM25 retrieval<br/>top-k chunks]
-    C --> D[Build context<br/>reference materials]
+    B --> R[Query rewriting<br/>LLM generates several queries]
+    R --> C1[BM25 recall<br/>lexical retrieval]
+    R --> C2[Vector recall<br/>bge-small-zh]
+    C1 --> F[RRF fusion<br/>merge ranked lists]
+    C2 --> F
+    F --> G[LLM rerank<br/>top-k precision]
+    G --> D[Build context<br/>reference materials]
     D --> E[DeepSeek LLM]
-    E --> F[Answer + citations]
-    U[Upload document] --> G[Text extraction<br/>pdf/md/txt]
-    G --> H[Chunk text<br/>with overlap]
-    H --> I[Store in db.json<br/>or MySQL]
-    I --> C
+    E --> H[Answer + citations + trace]
+    U[Upload document] --> I[Text extraction<br/>pdf/md/txt]
+    I --> J[Chunk text<br/>with overlap]
+    J --> K[Store in db.json<br/>or MySQL]
+    K --> C1
+    K --> C2
 ```
+
+> Every stage can be disabled via `.env` (`RAG_ENABLE_REWRITE=0` / `RAG_ENABLE_RERANK=0`) and gracefully degrades — handy for ablation studies.
 
 ## Quick start
 
@@ -86,6 +98,13 @@ Open **http://127.0.0.1:8000**.
 | `RAG_CHUNK_SIZE` | `600` | Target characters per chunk |
 | `RAG_CHUNK_OVERLAP` | `80` | Overlap between adjacent chunks |
 | `RAG_TEMPERATURE` | `0.2` | Answer temperature |
+| `RAG_EMBED_MODEL` | `BAAI/bge-small-zh-v1.5` | Embedding model (CPU-friendly, 512 dims); vectors rebuild automatically when changed |
+| `RAG_EMBED_BACKEND` | `auto` | `hash` forces the dependency-free hash embedder (CI / offline) |
+| `RAG_EMBED_QUERY_PREFIX` | bge instruction | Query-side instruction prefix recommended for bge models; may be left empty |
+| `RAG_CANDIDATE_K` | `12` | Candidates recalled by BM25 and by vectors before fusion |
+| `RAG_RRF_K` | `60` | RRF fusion constant (empirical value from the paper) |
+| `RAG_ENABLE_REWRITE` | `1` | Query rewriting on/off; `0` saves one LLM call |
+| `RAG_ENABLE_RERANK` | `1` | LLM reranking on/off; `0` saves one LLM call |
 | `RAG_DB_HOST` | empty | Set it to use MySQL; empty = JSON file |
 | `RAG_DB_PORT` | `3306` | MySQL port |
 | `RAG_DB_USER` | `root` | Database user |
@@ -121,16 +140,26 @@ rag-knowledge-base/
 │   ├── config.py      # Configuration (env / .env)
 │   ├── loaders.py     # File → text (pdf/md/txt)
 │   ├── chunking.py    # Text chunking (sentences + overlap)
-│   ├── retrieval.py   # BM25 retrieval
+│   ├── embeddings.py  # Embedding model (bge-small-zh / hash fallback)
+│   ├── vectorstore.py # Vector index (numpy cosine search)
+│   ├── retrieval.py   # BM25 + vector hybrid retrieval (RRF fusion)
+│   ├── rewrite.py     # Query rewriting (multi-query)
+│   ├── rerank.py      # LLM reranking
 │   ├── store.py       # Document store (JSON persistence, default)
 │   ├── db.py          # MySQL store + automatic fallback
 │   ├── llm.py         # DeepSeek client (retries + errors)
-│   └── rag.py         # RAG pipeline (retrieve → context → generate)
+│   └── rag.py         # RAG pipeline (rewrite → hybrid recall → fuse → rerank → generate)
 ├── static/            # Frontend (no build tools)
 ├── data/
-│   ├── sample/        # Sample knowledge base
+│   ├── sample/        # Sample knowledge base (incl. distractors for eval)
+│   ├── eval/          # Eval set (questions.json) and report (report.json)
 │   └── db.json        # Generated at runtime (gitignored; not used with MySQL)
-├── tests/             # pytest tests
+├── scripts/
+│   ├── evaluate.py    # Retrieval eval: hit@1 / hit@3 / MRR across configs
+│   └── smoke.py       # Real API smoke test
+├── docs/
+│   └── LEARNING-RAG-ADVANCED.md  # Beginner-friendly deep dive (theory + eval + interview Q&A)
+├── tests/             # pytest tests (27 cases)
 └── .github/workflows/ci.yml
 ```
 
@@ -139,6 +168,29 @@ rag-knowledge-base/
 ```bash
 pytest -q
 ```
+
+## Retrieval evaluation
+
+The repo ships 28 questions (including 8 paraphrased semantic ones) and `scripts/evaluate.py`, which runs four configurations and prints retrieval quality side by side:
+
+```bash
+python scripts/evaluate.py          # requires a key in .env (rerank/rewrite call the LLM)
+python scripts/evaluate.py --no-llm # BM25 vs hybrid only, no API cost
+```
+
+Metrics: **hit@1** = share of questions whose gold chunk ranks first; **hit@3** = ranks in the top 3; **MRR** = mean reciprocal rank of the gold chunk.
+
+Baseline (14 chunks, 28 questions, bge-small-zh):
+
+| Configuration | hit@1 | hit@3 | MRR | Latency |
+|---|---|---|---|---|
+| BM25 only | 0.57 | 0.93 | 0.720 | 4 ms |
+| Hybrid recall (BM25 + vectors, RRF) | 0.61 | 0.89 | 0.750 | 29 ms |
+| Hybrid + LLM rerank | 0.75 | 0.93 | 0.842 | 1.4 s |
+| Hybrid + query rewriting + rerank | **0.82** | **0.93** | **0.884** | 2.6 s |
+
+> Takeaway: on a small corpus BM25 is already strong (most questions contain the exact terms), so most of the gain comes from **reranking and query rewriting**. Hybrid recall lifts hit@1 / MRR but slightly lowers hit@3 — which is exactly why you need an eval set: without it you cannot tell whether a change helped or just churned.
+> Latency grows from 4 ms to 2.6 s because rerank and rewrite call the LLM; in production you can rerank only a small candidate set and cache rewrites.
 
 ## Optional: MySQL storage
 
@@ -180,26 +232,44 @@ RAG_DB_NAME=rag_kb
 
 ## Design notes
 
-**Why BM25 instead of vector retrieval?**
+**Why upgrade from BM25 to hybrid retrieval (instead of going all-in on vectors)?**
 
-- Zero dependencies: no embedding model download (100 MB+), no vector DB to run;
-- Good enough: for a small single-machine knowledge base BM25 performs well and answers in milliseconds;
-- Replaceable: `app/retrieval.py` exposes a single `search()` function — swapping in FAISS / Chroma / Milvus only touches that file, `rag.py` stays unchanged.
+- BM25 matches terms, costs milliseconds and has zero dependencies — very accurate when the question shares the document's wording;
+- Vectors cover paraphrases: "the model keeps answering from old docs after I updated them" vs. "an external knowledge base can be updated anytime" — no lexical overlap, but semantically close;
+- Each retriever recalls `RAG_CANDIDATE_K` candidates and the two ranked lists are merged with **RRF (Reciprocal Rank Fusion)**: it only looks at ranks, not scores, which neatly avoids the "BM25 score vs cosine similarity are different scales" problem — `score = Σ 1/(k + rank)`;
+- `bge-small-zh-v1.5` is 512-dimensional, runs on CPU and needs no vector database; following bge's recommendation the query side gets an instruction prefix while the document side does not.
+
+**Why LLM reranking and query rewriting?**
+
+- Reranking: recall favors "don't miss" (top-12), rerank favors "rank precisely" (the LLM scores each candidate, take top-4);
+- Rewriting: user questions are colloquial and sparse; asking the LLM for 2–3 retrieval queries and fusing them clearly lifts hit rate (hit@1 0.75 → 0.82 on the eval set);
+- Both cost latency (milliseconds → seconds), so both are switches: measurable and easy to turn off.
+
+**Fallback strategy (a common interview question)**
+
+- Embedding model fails to load → degrade to the hash embedder (`HashEmbedder`) so the service keeps running;
+- One retriever errors → degrade to pure BM25;
+- Rerank/rewrite output is not valid JSON → keep the original order (rerank) or fall back to the original question (rewrite);
+- MySQL unreachable → degrade to JSON storage.
+
+Correctness is covered by tests: `tests/test_hybrid.py` and `tests/test_pipeline.py` exercise fusion ordering, bad-output fallbacks and the trace fields.
 
 **How to make it production-ready?**
 
-1. Retrieval: BM25 → hybrid retrieval (BM25 + vectors) + rerank;
-2. Storage: JSON (default) → MySQL (supported) → vector DB;
+1. Storage: JSON (default) → MySQL (supported) → vector DB (Chroma / Milvus);
+2. Retrieval: hybrid retrieval (supported) → HNSW index in a vector DB + multi-recall;
 3. Chunking: structure-aware splitting (Markdown headings, PDF layout);
-4. Evaluation: add a RAGAS evaluation set and regression-test quality;
-5. Engineering: multi-turn context, access control, rate limiting, logging & monitoring.
+4. Evaluation: the current 28 questions are small — grow to 100+ and add RAGAS for generation quality;
+5. Engineering: multi-turn context, access control, rate limiting, logging & monitoring, rerank caching.
 
 ## Roadmap
 
 - [x] MySQL storage backend (documents / chunks tables)
-- [ ] Vector retrieval (FAISS/Chroma) + hybrid retrieval
+- [x] Vector retrieval (bge-small-zh) + BM25 hybrid retrieval (RRF fusion)
+- [x] LLM reranking + query rewriting
+- [x] Retrieval evaluation (28 questions, hit@1 / hit@3 / MRR, multi-config comparison)
 - [ ] Multi-turn conversation context
-- [ ] Index consistency check after document deletion
+- [ ] Vector DB (Chroma / FAISS) instead of the in-memory index
 - [ ] Answer rating / feedback button
 - [ ] Docker deployment
 
@@ -211,7 +281,7 @@ RAG_DB_NAME=rag_kb
 
 - **Error `没有找到 DEEPSEEK_API_KEY`**: check that `.env` is in the project root and has a value, or set the environment variable and restart the terminal.
 - **404 / model not found**: set `DEEPSEEK_MODEL` back to `deepseek-chat` in `.env`.
-- **Answer "知识库里没有找到"**: make sure the sidebar lists documents; Chinese retrieval is not synonym-aware, so try a different keyword.
+- **Answer "知识库里没有找到"**: make sure the sidebar lists documents; if the wording differs a lot from the source, the hybrid retriever can usually still find it — if not, try rephrasing or a different keyword.
 - **PDF has no extractable text**: scanned PDFs are images and need OCR (not supported yet).
 
 ## License

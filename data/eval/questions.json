@@ -1,0 +1,34 @@
+{
+  "note": "RAG 检索评估集：命中判定 = 检索结果的文档名对得上，且片段文本包含任一关键词。",
+  "questions": [
+    {"id": "q01", "question": "什么是 RAG？", "doc": "rag-quickstart.md", "keywords": ["检索增强生成"]},
+    {"id": "q02", "question": "RAG 的基本流程有哪几步？", "doc": "rag-quickstart.md", "keywords": ["切分", "索引"]},
+    {"id": "q03", "question": "文本切分块太大或者太小有什么问题？", "doc": "rag-quickstart.md", "keywords": ["块太大", "块太小"]},
+    {"id": "q04", "question": "BM25 是什么算法？", "doc": "rag-quickstart.md", "keywords": ["BM25"]},
+    {"id": "q05", "question": "BM25 为什么不支持同义词？", "doc": "rag-quickstart.md", "keywords": ["同义词"]},
+    {"id": "q06", "question": "常见的向量数据库有哪些？", "doc": "rag-quickstart.md", "keywords": ["FAISS", "Milvus"]},
+    {"id": "q07", "question": "RAG 和微调有什么区别？", "doc": "llm-interview.md", "keywords": ["外挂", "微调"]},
+    {"id": "q08", "question": "function calling 是什么？", "doc": "llm-interview.md", "keywords": ["工具调用"]},
+    {"id": "q09", "question": "Agent 和普通对话机器人有什么区别？", "doc": "llm-interview.md", "keywords": ["多步", "工具"]},
+    {"id": "q10", "question": "怎么防止大模型胡说八道？", "doc": "llm-interview.md", "keywords": ["兜底", "幻觉"]},
+    {"id": "q11", "question": "embedding 是什么？", "doc": "vector-search.md", "keywords": ["向量"]},
+    {"id": "q12", "question": "余弦相似度怎么算？", "doc": "vector-search.md", "keywords": ["余弦"]},
+    {"id": "q13", "question": "HNSW 是什么？", "doc": "vector-search.md", "keywords": ["HNSW"]},
+    {"id": "q14", "question": "RRF 融合的公式是什么？", "doc": "hybrid-rerank.md", "keywords": ["RRF"]},
+    {"id": "q15", "question": "cross-encoder 和双塔模型有什么区别？", "doc": "hybrid-rerank.md", "keywords": ["交叉编码器", "cross-encoder"]},
+    {"id": "q16", "question": "hit@k 和 MRR 分别衡量什么？", "doc": "rag-evaluation.md", "keywords": ["MRR"]},
+    {"id": "q17", "question": "RAGAS 是什么？", "doc": "rag-evaluation.md", "keywords": ["RAGAS"]},
+    {"id": "q18", "question": "LangGraph 的检查点有什么用？", "doc": "langgraph.md", "keywords": ["检查点"]},
+    {"id": "q19", "question": "supervisor 多智能体模式是什么？", "doc": "langgraph.md", "keywords": ["supervisor"]},
+    {"id": "q20", "question": "chunk 大小一般怎么定？", "doc": "llm-interview.md", "keywords": ["200-800"]},
+    {"id": "q21", "question": "公司内部资料太多，模型回答问题总是答非所问，有什么办法？", "doc": "rag-quickstart.md", "keywords": ["检索"]},
+    {"id": "q22", "question": "资料更新了，模型却还在用旧答案，怎么解决？", "doc": "rag-quickstart.md", "keywords": ["检索"]},
+    {"id": "q23", "question": "怎样让回答能追溯到具体是文档里的哪一段？", "doc": "rag-quickstart.md", "keywords": ["引用", "溯源"]},
+    {"id": "q24", "question": "检索回来的内容不靠谱，怎么在交给模型之前先筛一遍？", "doc": "hybrid-rerank.md", "keywords": ["重排", "rerank"]},
+    {"id": "q25", "question": "多路检索结果怎么合并成一个靠谱的排序？", "doc": "hybrid-rerank.md", "keywords": ["RRF", "融合"]},
+    {"id": "q26", "question": "系统上线后效果变差，怎么定位是哪一步的问题？", "doc": "rag-evaluation.md", "keywords": ["评估", "召回"]},
+    {"id": "q27", "question": "怎么低成本地量化回答质量？", "doc": "rag-evaluation.md", "keywords": ["RAGAS", "评估"]},
+    {"id": "q28", "question": "知识库很大，切块和检索怎么配合才不丢信息？", "doc": "rag-quickstart.md", "keywords": ["切分", "重叠"]}
+  ]
+}
+
