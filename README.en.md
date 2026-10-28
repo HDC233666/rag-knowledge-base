@@ -13,6 +13,8 @@ An **out-of-the-box** RAG (Retrieval-Augmented Generation) knowledge-base Q&A ap
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Python](https://img.shields.io/badge/python-3.11%2B-yellow)
 
+![Screenshot](docs/screenshots/chat.png)
+
 ---
 
 ## Features
@@ -171,7 +173,7 @@ pytest -q
 
 ## Retrieval evaluation
 
-The repo ships 28 questions (including 8 paraphrased semantic ones) and `scripts/evaluate.py`, which runs four configurations and prints retrieval quality side by side:
+The repo ships 62 questions (paraphrased, section-targeted and distractor-aware) and `scripts/evaluate.py`, which runs four configurations and prints retrieval quality side by side:
 
 ```bash
 python scripts/evaluate.py          # requires a key in .env (rerank/rewrite call the LLM)
@@ -180,17 +182,35 @@ python scripts/evaluate.py --no-llm # BM25 vs hybrid only, no API cost
 
 Metrics: **hit@1** = share of questions whose gold chunk ranks first; **hit@3** = ranks in the top 3; **MRR** = mean reciprocal rank of the gold chunk.
 
-Baseline (14 chunks, 28 questions, bge-small-zh):
+Baseline (14 chunks, 62 questions, bge-small-zh):
 
 | Configuration | hit@1 | hit@3 | MRR | Latency |
 |---|---|---|---|---|
-| BM25 only | 0.57 | 0.93 | 0.720 | 4 ms |
-| Hybrid recall (BM25 + vectors, RRF) | 0.61 | 0.89 | 0.750 | 29 ms |
-| Hybrid + LLM rerank | 0.75 | 0.93 | 0.842 | 1.4 s |
-| Hybrid + query rewriting + rerank | **0.82** | **0.93** | **0.884** | 2.6 s |
+| BM25 only | 0.66 | 0.90 | 0.767 | 4 ms |
+| Hybrid recall (BM25 + vectors, RRF) | 0.66 | 0.90 | 0.781 | 19 ms |
+| Hybrid + LLM rerank | 0.73 | 0.94 | 0.831 | 1.45 s |
+| Hybrid + query rewriting + rerank | **0.77** | **0.97** | **0.864** | 2.63 s |
 
-> Takeaway: on a small corpus BM25 is already strong (most questions contain the exact terms), so most of the gain comes from **reranking and query rewriting**. Hybrid recall lifts hit@1 / MRR but slightly lowers hit@3 — which is exactly why you need an eval set: without it you cannot tell whether a change helped or just churned.
-> Latency grows from 4 ms to 2.6 s because rerank and rewrite call the LLM; in production you can rerank only a small candidate set and cache rewrites.
+> Takeaway: on a small corpus BM25 is already strong (most questions contain the exact terms), so most of the gain comes from **reranking and query rewriting**. Hybrid recall moves MRR 0.767 → 0.781 (vectors cover the "different wording" questions) while hit@1 / hit@3 stay flat — which is exactly why you need an eval set: without it you cannot tell whether a change helped or just churned.
+> Latency grows from 4 ms to 2.6 s because rerank and rewrite call the LLM; that is why the pipeline caches both (see below).
+
+### Cache
+
+Rewrite and rerank results are cached in SQLite keyed by question + candidate fingerprint (`RAG_CACHE_TTL`, 1 hour by default). Same questions asked again:
+
+| Scenario | Latency |
+|---|---|
+| First time (cold: one rewrite + one rerank LLM call) | 1.4 – 2.6 s |
+| Cache hit (rewrites and rerank scores read from SQLite) | **28 ms** (~50× faster) |
+
+### Rerank backends
+
+| Backend | How it works | Latency | Dependency |
+|---|---|---|---|
+| `llm` (default) | ask the LLM to score candidates 0–10 | ~1.4 s | API key |
+| `cross` | local bge-reranker cross-encoder (fastembed/ONNX) | tens of ms | ~100 MB model download |
+
+If the `cross` model cannot be downloaded or inference fails, the pipeline silently falls back to `llm` reranking.
 
 ## Optional: MySQL storage
 
@@ -242,7 +262,7 @@ RAG_DB_NAME=rag_kb
 **Why LLM reranking and query rewriting?**
 
 - Reranking: recall favors "don't miss" (top-12), rerank favors "rank precisely" (the LLM scores each candidate, take top-4);
-- Rewriting: user questions are colloquial and sparse; asking the LLM for 2–3 retrieval queries and fusing them clearly lifts hit rate (hit@1 0.75 → 0.82 on the eval set);
+- Rewriting: user questions are colloquial and sparse; asking the LLM for 2–3 retrieval queries and fusing them clearly lifts hit rate (hit@1 0.73 → 0.77 on the eval set);
 - Both cost latency (milliseconds → seconds), so both are switches: measurable and easy to turn off.
 
 **Fallback strategy (a common interview question)**
@@ -259,7 +279,7 @@ Correctness is covered by tests: `tests/test_hybrid.py` and `tests/test_pipeline
 1. Storage: JSON (default) → MySQL (supported) → vector DB (Chroma / Milvus);
 2. Retrieval: hybrid retrieval (supported) → HNSW index in a vector DB + multi-recall;
 3. Chunking: structure-aware splitting (Markdown headings, PDF layout);
-4. Evaluation: the current 28 questions are small — grow to 100+ and add RAGAS for generation quality;
+4. Evaluation: the current 62 questions are small — grow to 100+ and add RAGAS for generation quality;
 5. Engineering: multi-turn context, access control, rate limiting, logging & monitoring, rerank caching.
 
 ## Roadmap
@@ -267,7 +287,7 @@ Correctness is covered by tests: `tests/test_hybrid.py` and `tests/test_pipeline
 - [x] MySQL storage backend (documents / chunks tables)
 - [x] Vector retrieval (bge-small-zh) + BM25 hybrid retrieval (RRF fusion)
 - [x] LLM reranking + query rewriting
-- [x] Retrieval evaluation (28 questions, hit@1 / hit@3 / MRR, multi-config comparison)
+- [x] Retrieval evaluation (62 questions, hit@1 / hit@3 / MRR, multi-config comparison)
 - [ ] Multi-turn conversation context
 - [ ] Vector DB (Chroma / FAISS) instead of the in-memory index
 - [ ] Answer rating / feedback button

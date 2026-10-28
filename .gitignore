@@ -10,6 +10,7 @@ venv/
 
 # 运行时数据
 data/db.json
+data/cache.db
 data/uploads/
 
 # 工具

@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import re
 
-from . import llm
+from . import cache, llm
 from .config import ENABLE_REWRITE
 
 PROMPT = """你是检索查询优化助手。把用户问题改写成 1~3 条适合做检索的短查询。
@@ -51,6 +51,17 @@ def rewrite(question: str, enabled: bool | None = None) -> tuple[list[str], bool
     if not enabled:
         return [question], False
 
+    # 先查缓存：同一个问题改写结果不会变，命中就省一次 LLM 调用
+    cached = cache.get("rewrite", question)
+    if cached and isinstance(cached.get("queries"), list):
+        queries = [
+            str(item).strip().strip("「」\"'").strip()
+            for item in cached["queries"]
+            if str(item).strip()
+        ]
+        if queries:
+            return queries[:3], True
+
     try:
         result = llm.chat(
             [
@@ -72,4 +83,6 @@ def rewrite(question: str, enabled: bool | None = None) -> tuple[list[str], bool
         return [question], False
     if question.lower() not in {q.lower() for q in queries}:
         queries.insert(0, question)
-    return queries[:3], True
+    queries = queries[:3]
+    cache.put("rewrite", question, {"queries": queries})
+    return queries, True

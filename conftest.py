@@ -17,3 +17,4 @@ if str(ROOT) not in sys.path:
 os.environ.setdefault("RAG_EMBED_BACKEND", "hash")
 os.environ.setdefault("RAG_ENABLE_REWRITE", "0")
 os.environ.setdefault("RAG_ENABLE_RERANK", "0")
+os.environ.setdefault("RAG_ENABLE_CACHE", "0")

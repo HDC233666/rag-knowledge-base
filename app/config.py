@@ -35,6 +35,15 @@ ENABLE_REWRITE = os.getenv("RAG_ENABLE_REWRITE", "1").lower() not in {"0", "fals
 # LLM 重排：关掉可省一次 LLM 调用
 ENABLE_RERANK = os.getenv("RAG_ENABLE_RERANK", "1").lower() not in {"0", "false", "off", "no"}
 
+# ===== 缓存与重排后端（v3）=====
+# 改写 / 重排结果缓存（SQLite + TTL）：重复问题从「秒级」降到「毫秒级」
+ENABLE_CACHE = os.getenv("RAG_ENABLE_CACHE", "1").lower() not in {"0", "false", "off", "no"}
+CACHE_PATH = os.getenv("RAG_CACHE_PATH", str(DATA_DIR / "cache.db")).strip()
+CACHE_TTL_SECONDS = int(os.getenv("RAG_CACHE_TTL", "3600"))
+# 重排后端：llm = LLM 打分（默认）；cross = bge-reranker 交叉编码器（本地 ONNX，便宜、快）
+RERANK_BACKEND = os.getenv("RAG_RERANK_BACKEND", "llm").strip().lower()
+CROSS_ENCODER_MODEL = os.getenv("RAG_CROSS_ENCODER_MODEL", "BAAI/bge-reranker-base")
+
 # ===== 存储后端 =====
 # 留空 = 用 JSON 文件（默认，零配置）；填了 = 用 MySQL，连不上会自动降级 JSON
 DB_HOST = os.getenv("RAG_DB_HOST", "").strip()
