@@ -30,6 +30,8 @@ An **out-of-the-box** RAG (Retrieval-Augmented Generation) knowledge-base Q&A ap
 | Query rewriting | The LLM expands one question into several retrieval queries (multi-query recall) |
 | Reranking | LLM scoring (default) or bge cross-encoder (local CPU) reorders candidates |
 | Caching | Rewrite/rerank results cached in SQLite with TTL — repeat questions go from seconds to milliseconds |
+| RAGAS metrics | Faithfulness / answer relevancy / context precision / context recall on a 20-question subset |
+| Real-corpus benchmark | 114 FastAPI zh docs (2100 chunks) as distractors — 14 vs 2100+ chunk retrieval quality |
 | Answers with citations | Answers carry `[1][2]` markers; the UI shows the source snippet and score of each citation |
 | Anti-hallucination | Prompt strictly says "if it's not in the materials, say so"; empty retrieval → refuse to answer |
 | Persistence | `data/db.json` by default; set MySQL vars to store in a database (see below) |
@@ -239,6 +241,20 @@ Breakdown by question type makes it clear who each change helps (hit@1):
 > This table is more interesting than the total: **on paraphrase questions BM25 scores only 0.25, hybrid recall doubles it to 0.50 and rerank lifts it to 0.62** — that is the problem vectors + rerank actually solve. Conversely, section questions are largely copied from headings/keywords, where BM25 is close to copying from an open book (0.82) and semantic changes only dilute the lexical edge.
 > Hence: never quote a single total. On a small corpus the total hides structural differences, so evaluate per group. The cost is visible too — latency grows from 3 ms to 2.6 s because rerank and rewrite call the LLM; in production, cache the expensive parts (see below).
 
+### Real-corpus benchmark (thousands of chunks)
+
+`scripts/corpus_fastapi.py` crawls 114 FastAPI Chinese doc pages (~1 MB -> 2100 chunks); `scripts/ingest_corpus.py` stores them as a separate collection `fastapi-docs`; `evaluate.py --extra-corpus` mixes them into the retrieval pool as distractors:
+
+| Corpus | Config | hit@1 | hit@3 | MRR | Latency |
+|---|---|---|---|---|---|
+| 14 chunks | BM25 | 0.72 | 0.93 | 0.818 | 3 ms |
+| 2114 chunks | BM25 | 0.61 | 0.87 | 0.733 | 181 ms |
+| 2114 chunks | Hybrid | 0.57 | 0.83 | 0.688 | 939 ms |
+| 2114 chunks | Hybrid + rerank | **0.76** | 0.93 | 0.842 | 1.5 s |
+| 2114 chunks | Hybrid + rewrite + rerank | 0.75 | **0.96** | **0.852** | 2.7 s |
+
+> Single-stage retrieval degrades at scale (BM25 0.72 -> 0.61); **rerank brings hit@1 back to 0.76** — the value of retrieve-then-rerank. BM25 latency grows from 3 ms to 181 ms scanning 2114 chunks, which is why production needs sharding, inverted indexes and caching.
+
 ### Cache
 
 Rewrite and rerank results are cached in SQLite keyed by question + candidate fingerprint (`RAG_CACHE_TTL`, 1 hour by default). Same questions asked again:
@@ -275,6 +291,19 @@ python scripts/evaluate_generation.py --limit 20   # 20 questions, 2 LLM calls e
 > Two honest caveats:
 > 1. The judge receives the **full retrieved chunk text**, not the 160-char snippet shown in the UI — otherwise it mistakes "the snippet does not cover the claim" for "the model hallucinated". The first version of this script fell into exactly that trap and scored 65 / 75 / 63;
 > 2. The judge is the **same model** being evaluated, so it is lenient. Absolute numbers only show a trend; this is useful for A/B comparisons (prompt changes, model swaps, reranking on/off). In production, use a stronger judge model plus human spot checks.
+
+### RAGAS metrics (20 questions)
+
+`scripts/ragas_eval.py` scores four RAGAS-style dimensions with an LLM judge:
+
+| Metric | Meaning | Score (20 q, 0-1) |
+|---|---|---|
+| Faithfulness | Every claim grounded in retrieved chunks | **1.000** |
+| Answer relevancy | How on-topic the answer is | **0.975** |
+| Context precision | Share of retrieved chunks that are useful | 0.550 |
+| Context recall | Whether the labelled target chunk is covered | **0.965** |
+
+> Context precision is structurally low: with top_k=4 and one gold chunk the ceiling is ~0.25-0.5. The judge is the same model as the generator, so compare trends, not absolutes.
 
 ### Vector index backends (numpy / FAISS)
 

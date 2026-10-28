@@ -4,6 +4,8 @@
     python scripts/evaluate.py                 # 20 题全跑
     python scripts/evaluate.py --limit 10      # 只跑前 10 题
     python scripts/evaluate.py --no-llm        # 跳过需要调用大模型的重排配置
+    python scripts/evaluate.py --extra-corpus data/corpus/fastapi --report-suffix _large
+        # 额外语料作为干扰文档一起参与检索，模拟「千级切片」的真实规模
 
 指标：
     hit@1 / hit@3：正确片段是否出现在第 1 名 / 前 3 名
@@ -45,6 +47,24 @@ def load_chunks() -> list[dict]:
                 {
                     "id": f"{path.name}#{index}",
                     "doc_name": path.name,
+                    "index": index,
+                    "text": piece,
+                }
+            )
+    return chunks
+
+
+def load_extra_corpus(directory: str) -> list[dict]:
+    """把额外语料目录下的 .txt 切块后作为干扰文档加入检索池。"""
+    base = ROOT / directory
+    chunks: list[dict] = []
+    for path in sorted(base.glob("*.txt")):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for index, piece in enumerate(split_text(text, CHUNK_SIZE, CHUNK_OVERLAP)):
+            chunks.append(
+                {
+                    "id": f"corpus:{path.name}#{index}",
+                    "doc_name": f"corpus:{path.name}",
                     "index": index,
                     "text": piece,
                 }
@@ -101,9 +121,15 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=0, help="只评估前 N 题（0 = 全部）")
     parser.add_argument("--no-llm", action="store_true", help="跳过 LLM 重排配置")
+    parser.add_argument("--extra-corpus", default="", help="额外语料目录（.txt），作为干扰文档")
+    parser.add_argument("--report-suffix", default="", help="报告文件名后缀，如 _large")
     args = parser.parse_args()
 
     chunks = load_chunks()
+    if args.extra_corpus:
+        extra = load_extra_corpus(args.extra_corpus)
+        chunks.extend(extra)
+        print(f"额外语料: {len(extra)} 个切片（{args.extra_corpus}）")
     spec = json.loads((ROOT / "data" / "eval" / "questions.json").read_text(encoding="utf-8"))
     questions = spec["questions"]
     if args.limit:
@@ -146,11 +172,12 @@ def main() -> int:
     report = {
         "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "chunks": len(chunks),
+        "extra_corpus": args.extra_corpus or None,
         "questions": len(questions),
         "embedder": get_embedder().name,
         "results": results,
     }
-    out = ROOT / "data" / "eval" / "report.json"
+    out = ROOT / "data" / "eval" / f"report{args.report_suffix}.json"
     out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"\n报告已写入: {out}")
     return 0

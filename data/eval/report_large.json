@@ -1,0 +1,73 @@
+{
+  "generated_at": "2026-10-29 02:05:43",
+  "chunks": 2114,
+  "extra_corpus": "data/corpus/fastapi",
+  "questions": 100,
+  "embedder": "BAAI/bge-small-zh-v1.5",
+  "results": [
+    {
+      "config": "bm25",
+      "hit@1": 0.61,
+      "hit@3": 0.87,
+      "mrr": 0.7333333333333333,
+      "avg_latency_ms": 181.26956598600373,
+      "misses": [
+        "q04",
+        "q17",
+        "q24",
+        "q25",
+        "q46",
+        "q51",
+        "q79",
+        "q89",
+        "q96"
+      ]
+    },
+    {
+      "config": "hybrid",
+      "hit@1": 0.57,
+      "hit@3": 0.83,
+      "mrr": 0.6875,
+      "avg_latency_ms": 939.0751899778843,
+      "misses": [
+        "q04",
+        "q17",
+        "q24",
+        "q46",
+        "q51",
+        "q58",
+        "q79",
+        "q81",
+        "q86",
+        "q89",
+        "q95",
+        "q96"
+      ]
+    },
+    {
+      "config": "hybrid+rerank",
+      "hit@1": 0.76,
+      "hit@3": 0.93,
+      "mrr": 0.8416666666666669,
+      "avg_latency_ms": 1499.830660999287,
+      "misses": [
+        "q17",
+        "q51",
+        "q54",
+        "q89",
+        "q96"
+      ]
+    },
+    {
+      "config": "hybrid+rewrite+rerank",
+      "hit@1": 0.75,
+      "hit@3": 0.96,
+      "mrr": 0.8516666666666667,
+      "avg_latency_ms": 2713.105969999451,
+      "misses": [
+        "q51",
+        "q54"
+      ]
+    }
+  ]
+}

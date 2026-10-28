@@ -1,0 +1,312 @@
+{
+  "generated_at": "2026-10-29 01:56:30",
+  "questions": 20,
+  "chunks": 14,
+  "elapsed_seconds": 146.1,
+  "faithfulness": 1.0,
+  "answer_relevancy": 0.975,
+  "context_precision": 0.55,
+  "context_recall": 0.965,
+  "rows": [
+    {
+      "id": "q01",
+      "question": "什么是 RAG？",
+      "faithfulness": 1.0,
+      "answer_relevancy": 1.0,
+      "context_precision": 0.75,
+      "context_recall": 1.0,
+      "answer_chars": 557,
+      "retrieved": [
+        "rag-quickstart.md",
+        "llm-interview.md",
+        "rag-quickstart.md",
+        "llm-interview.md"
+      ]
+    },
+    {
+      "id": "q02",
+      "question": "RAG 的基本流程有哪几步？",
+      "faithfulness": 1.0,
+      "answer_relevancy": 1.0,
+      "context_precision": 0.5,
+      "context_recall": 1.0,
+      "answer_chars": 183,
+      "retrieved": [
+        "rag-quickstart.md",
+        "rag-quickstart.md",
+        "llm-interview.md",
+        "rag-quickstart.md"
+      ]
+    },
+    {
+      "id": "q03",
+      "question": "文本切分块太大或者太小有什么问题？",
+      "faithfulness": 1.0,
+      "answer_relevancy": 1.0,
+      "context_precision": 0.5,
+      "context_recall": 1.0,
+      "answer_chars": 253,
+      "retrieved": [
+        "rag-quickstart.md",
+        "rag-quickstart.md",
+        "rag-quickstart.md",
+        "llm-interview.md"
+      ]
+    },
+    {
+      "id": "q04",
+      "question": "BM25 是什么算法？",
+      "faithfulness": 1.0,
+      "answer_relevancy": 1.0,
+      "context_precision": 1.0,
+      "context_recall": 1.0,
+      "answer_chars": 217,
+      "retrieved": [
+        "rag-quickstart.md",
+        "hybrid-rerank.md",
+        "vector-search.md",
+        "rag-quickstart.md"
+      ]
+    },
+    {
+      "id": "q05",
+      "question": "BM25 为什么不支持同义词？",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.8,
+      "context_precision": 0.75,
+      "context_recall": 0.8,
+      "answer_chars": 158,
+      "retrieved": [
+        "rag-quickstart.md",
+        "hybrid-rerank.md",
+        "vector-search.md",
+        "vector-search.md"
+      ]
+    },
+    {
+      "id": "q06",
+      "question": "常见的向量数据库有哪些？",
+      "faithfulness": 1.0,
+      "answer_relevancy": 1.0,
+      "context_precision": 0.75,
+      "context_recall": 1.0,
+      "answer_chars": 312,
+      "retrieved": [
+        "rag-quickstart.md",
+        "rag-quickstart.md",
+        "vector-search.md",
+        "vector-search.md"
+      ]
+    },
+    {
+      "id": "q07",
+      "question": "RAG 和微调有什么区别？",
+      "faithfulness": 1.0,
+      "answer_relevancy": 1.0,
+      "context_precision": 0.25,
+      "context_recall": 1.0,
+      "answer_chars": 219,
+      "retrieved": [
+        "llm-interview.md",
+        "rag-quickstart.md",
+        "llm-interview.md",
+        "vector-search.md"
+      ]
+    },
+    {
+      "id": "q08",
+      "question": "function calling 是什么？",
+      "faithfulness": 1.0,
+      "answer_relevancy": 1.0,
+      "context_precision": 0.25,
+      "context_recall": 1.0,
+      "answer_chars": 276,
+      "retrieved": [
+        "llm-interview.md",
+        "langgraph.md",
+        "rag-quickstart.md",
+        "vector-search.md"
+      ]
+    },
+    {
+      "id": "q09",
+      "question": "Agent 和普通对话机器人有什么区别？",
+      "faithfulness": 1.0,
+      "answer_relevancy": 1.0,
+      "context_precision": 0.25,
+      "context_recall": 1.0,
+      "answer_chars": 469,
+      "retrieved": [
+        "llm-interview.md",
+        "langgraph.md",
+        "rag-quickstart.md",
+        "vector-search.md"
+      ]
+    },
+    {
+      "id": "q10",
+      "question": "怎么防止大模型胡说八道？",
+      "faithfulness": 1.0,
+      "answer_relevancy": 1.0,
+      "context_precision": 0.75,
+      "context_recall": 1.0,
+      "answer_chars": 383,
+      "retrieved": [
+        "llm-interview.md",
+        "rag-quickstart.md",
+        "rag-quickstart.md",
+        "llm-interview.md"
+      ]
+    },
+    {
+      "id": "q11",
+      "question": "embedding 是什么？",
+      "faithfulness": 1.0,
+      "answer_relevancy": 1.0,
+      "context_precision": 0.75,
+      "context_recall": 1.0,
+      "answer_chars": 322,
+      "retrieved": [
+        "vector-search.md",
+        "rag-quickstart.md",
+        "vector-search.md",
+        "rag-quickstart.md"
+      ]
+    },
+    {
+      "id": "q12",
+      "question": "余弦相似度怎么算？",
+      "faithfulness": 1.0,
+      "answer_relevancy": 1.0,
+      "context_precision": 0.5,
+      "context_recall": 1.0,
+      "answer_chars": 91,
+      "retrieved": [
+        "vector-search.md",
+        "vector-search.md",
+        "rag-quickstart.md",
+        "hybrid-rerank.md"
+      ]
+    },
+    {
+      "id": "q13",
+      "question": "HNSW 是什么？",
+      "faithfulness": 1.0,
+      "answer_relevancy": 1.0,
+      "context_precision": 0.5,
+      "context_recall": 0.9,
+      "answer_chars": 201,
+      "retrieved": [
+        "vector-search.md",
+        "vector-search.md",
+        "rag-quickstart.md",
+        "rag-quickstart.md"
+      ]
+    },
+    {
+      "id": "q14",
+      "question": "RRF 融合的公式是什么？",
+      "faithfulness": 1.0,
+      "answer_relevancy": 1.0,
+      "context_precision": 0.5,
+      "context_recall": 1.0,
+      "answer_chars": 297,
+      "retrieved": [
+        "hybrid-rerank.md",
+        "hybrid-rerank.md",
+        "rag-quickstart.md",
+        "vector-search.md"
+      ]
+    },
+    {
+      "id": "q15",
+      "question": "cross-encoder 和双塔模型有什么区别？",
+      "faithfulness": 1.0,
+      "answer_relevancy": 1.0,
+      "context_precision": 0.5,
+      "context_recall": 1.0,
+      "answer_chars": 429,
+      "retrieved": [
+        "hybrid-rerank.md",
+        "vector-search.md",
+        "rag-quickstart.md",
+        "llm-interview.md"
+      ]
+    },
+    {
+      "id": "q16",
+      "question": "hit@k 和 MRR 分别衡量什么？",
+      "faithfulness": 1.0,
+      "answer_relevancy": 1.0,
+      "context_precision": 0.5,
+      "context_recall": 1.0,
+      "answer_chars": 260,
+      "retrieved": [
+        "rag-evaluation.md",
+        "hybrid-rerank.md",
+        "rag-evaluation.md",
+        "hybrid-rerank.md"
+      ]
+    },
+    {
+      "id": "q17",
+      "question": "RAGAS 是什么？",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.8,
+      "context_precision": 0.5,
+      "context_recall": 0.6,
+      "answer_chars": 115,
+      "retrieved": [
+        "rag-quickstart.md",
+        "vector-search.md",
+        "rag-quickstart.md",
+        "rag-quickstart.md"
+      ]
+    },
+    {
+      "id": "q18",
+      "question": "LangGraph 的检查点有什么用？",
+      "faithfulness": 1.0,
+      "answer_relevancy": 1.0,
+      "context_precision": 0.25,
+      "context_recall": 1.0,
+      "answer_chars": 262,
+      "retrieved": [
+        "langgraph.md",
+        "rag-quickstart.md",
+        "vector-search.md",
+        "rag-quickstart.md"
+      ]
+    },
+    {
+      "id": "q19",
+      "question": "supervisor 多智能体模式是什么？",
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.9,
+      "context_precision": 0.25,
+      "context_recall": 1.0,
+      "answer_chars": 342,
+      "retrieved": [
+        "langgraph.md",
+        "llm-interview.md",
+        "llm-interview.md",
+        "rag-quickstart.md"
+      ]
+    },
+    {
+      "id": "q20",
+      "question": "chunk 大小一般怎么定？",
+      "faithfulness": 1.0,
+      "answer_relevancy": 1.0,
+      "context_precision": 1.0,
+      "context_recall": 1.0,
+      "answer_chars": 260,
+      "retrieved": [
+        "rag-quickstart.md",
+        "rag-quickstart.md",
+        "rag-quickstart.md",
+        "llm-interview.md"
+      ]
+    }
+  ]
+}

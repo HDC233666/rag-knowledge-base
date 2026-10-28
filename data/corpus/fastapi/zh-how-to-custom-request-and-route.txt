@@ -1,0 +1,307 @@
+自定义 Request 和 APIRoute 类 - FastAPI
+
+自定义 Request 和 APIRoute 类 ¶
+🌐 由 AI 与人类协作翻译
+本翻译由人类引导的 AI 生成。🤝
+可能存在误解原意或不够自然等问题。🤖
+你可以通过 帮助我们更好地引导 AI LLM 来改进此翻译。
+英文版本
+在某些情况下，你可能想要重写 Request 和 APIRoute 类使用的逻辑。
+尤其是，当你本来会把这些逻辑放到中间件里时，这是一个不错的替代方案。
+例如，如果你想在应用处理之前读取或操作请求体。
+危险
+这是一个“高级”特性。
+如果你刚开始使用 FastAPI ，可以先跳过本节。
+使用场景 ¶
+一些使用场景包括：
+将非 JSON 的请求体转换为 JSON（例如 msgpack ）。
+解压缩使用 gzip 压缩的请求体。
+自动记录所有请求体日志。
+处理自定义请求体编码 ¶
+来看如何用自定义的 Request 子类来解压 gzip 请求。
+以及一个 APIRoute 子类来使用该自定义请求类。
+创建自定义 GzipRequest 类 ¶
+提示
+这是一个演示工作原理的示例。如果你需要 Gzip 支持，可以直接使用提供的 GzipMiddleware 。
+首先，我们创建一个 GzipRequest 类，它会重写 Request.body() 方法：当请求头中存在相应标记时对请求体进行解压。
+如果请求头中没有 gzip ，则不会尝试解压。
+这样，同一个路由类即可同时处理 gzip 压缩和未压缩的请求。
+Python 3.10+
+import gzip
+from collections.abc import Callable
+from typing import Annotated
+from fastapi import Body , FastAPI , Request , Response
+from fastapi.routing import APIRoute
+class GzipRequest ( Request ):
+async def body ( self ) -> bytes :
+if not hasattr ( self , "_body" ):
+body = await super () . body ()
+if "gzip" in self . headers . getlist ( "Content-Encoding" ):
+body = gzip . decompress ( body )
+self . _body = body
+return self . _body
+class GzipRoute ( APIRoute ):
+def get_route_handler ( self ) -> Callable :
+original_route_handler = super () . get_route_handler ()
+async def custom_route_handler ( request : Request ) -> Response :
+request = GzipRequest ( request . scope , request . receive )
+return await original_route_handler ( request )
+return custom_route_handler
+app = FastAPI ()
+app . router . route_class = GzipRoute
+@app . post ( "/sum" )
+async def sum_numbers ( numbers : Annotated [ list [ int ], Body ()]):
+return { "sum" : sum ( numbers )}
+🤓 Other versions and variants
+Python 3.10+ - non-Annotated
+Tip
+Prefer to use the Annotated version if possible.
+import gzip
+from collections.abc import Callable
+from fastapi import Body , FastAPI , Request , Response
+from fastapi.routing import APIRoute
+class GzipRequest ( Request ):
+async def body ( self ) -> bytes :
+if not hasattr ( self , "_body" ):
+body = await super () . body ()
+if "gzip" in self . headers . getlist ( "Content-Encoding" ):
+body = gzip . decompress ( body )
+self . _body = body
+return self . _body
+class GzipRoute ( APIRoute ):
+def get_route_handler ( self ) -> Callable :
+original_route_handler = super () . get_route_handler ()
+async def custom_route_handler ( request : Request ) -> Response :
+request = GzipRequest ( request . scope , request . receive )
+return await original_route_handler ( request )
+return custom_route_handler
+app = FastAPI ()
+app . router . route_class = GzipRoute
+@app . post ( "/sum" )
+async def sum_numbers ( numbers : list [ int ] = Body ()):
+return { "sum" : sum ( numbers )}
+创建自定义 GzipRoute 类 ¶
+接着，我们创建 fastapi.routing.APIRoute 的自定义子类来使用 GzipRequest 。
+这次，我们会重写 APIRoute.get_route_handler() 方法。
+该方法返回一个函数，这个函数负责接收请求并返回响应。
+这里我们用它把原始请求包装为 GzipRequest 。
+Python 3.10+
+import gzip
+from collections.abc import Callable
+from typing import Annotated
+from fastapi import Body , FastAPI , Request , Response
+from fastapi.routing import APIRoute
+class GzipRequest ( Request ):
+async def body ( self ) -> bytes :
+if not hasattr ( self , "_body" ):
+body = await super () . body ()
+if "gzip" in self . headers . getlist ( "Content-Encoding" ):
+body = gzip . decompress ( body )
+self . _body = body
+return self . _body
+class GzipRoute ( APIRoute ):
+def get_route_handler ( self ) -> Callable :
+original_route_handler = super () . get_route_handler ()
+async def custom_route_handler ( request : Request ) -> Response :
+request = GzipRequest ( request . scope , request . receive )
+return await original_route_handler ( request )
+return custom_route_handler
+app = FastAPI ()
+app . router . route_class = GzipRoute
+@app . post ( "/sum" )
+async def sum_numbers ( numbers : Annotated [ list [ int ], Body ()]):
+return { "sum" : sum ( numbers )}
+🤓 Other versions and variants
+Python 3.10+ - non-Annotated
+Tip
+Prefer to use the Annotated version if possible.
+import gzip
+from collections.abc import Callable
+from fastapi import Body , FastAPI , Request , Response
+from fastapi.routing import APIRoute
+class GzipRequest ( Request ):
+async def body ( self ) -> bytes :
+if not hasattr ( self , "_body" ):
+body = await super () . body ()
+if "gzip" in self . headers . getlist ( "Content-Encoding" ):
+body = gzip . decompress ( body )
+self . _body = body
+return self . _body
+class GzipRoute ( APIRoute ):
+def get_route_handler ( self ) -> Callable :
+original_route_handler = super () . get_route_handler ()
+async def custom_route_handler ( request : Request ) -> Response :
+request = GzipRequest ( request . scope , request . receive )
+return await original_route_handler ( request )
+return custom_route_handler
+app = FastAPI ()
+app . router . route_class = GzipRoute
+@app . post ( "/sum" )
+async def sum_numbers ( numbers : list [ int ] = Body ()):
+return { "sum" : sum ( numbers )}
+技术细节
+Request 拥有 request.scope 属性，它就是一个 Python dict ，包含与请求相关的元数据。
+Request 还包含 request.receive ，它是一个用于“接收”请求体的函数。
+scope 字典和 receive 函数都是 ASGI 规范的一部分。
+创建一个新的 Request 实例需要这两样： scope 和 receive 。
+想了解更多关于 Request 的信息，请查看 Starlette 的 Request 文档 。
+由 GzipRequest.get_route_handler 返回的函数唯一不同之处是把 Request 转换为 GzipRequest 。
+这样，在传给我们的 路径操作 之前， GzipRequest 会（在需要时）负责解压数据。
+之后，其余处理逻辑完全相同。
+但由于我们修改了 GzipRequest.body ，在 FastAPI 需要读取时，请求体会被自动解压。
+在异常处理器中访问请求体 ¶
+提示
+要解决类似问题，使用 RequestValidationError 的自定义处理器中的 body 往往更简单（ 处理错误 ）。
+但本示例同样有效，并展示了如何与内部组件交互。
+我们也可以用相同的方法在异常处理器中访问请求体。
+所需仅是在 try / except 块中处理请求：
+Python 3.10+
+from collections.abc import Callable
+from typing import Annotated
+from fastapi import Body , FastAPI , HTTPException , Request , Response
+from fastapi.exceptions import RequestValidationError
+from fastapi.routing import APIRoute
+class ValidationErrorLoggingRoute ( APIRoute ):
+def get_route_handler ( self ) -> Callable :
+original_route_handler = super () . get_route_handler ()
+async def custom_route_handler ( request : Request ) -> Response :
+try :
+return await original_route_handler ( request )
+except RequestValidationError as exc :
+body = await request . body ()
+detail = { "errors" : exc . errors (), "body" : body . decode ()}
+raise HTTPException ( status_code = 422 , detail = detail )
+return custom_route_handler
+app = FastAPI ()
+app . router . route_class = ValidationErrorLoggingRoute
+@app . post ( "/" )
+async def sum_numbers ( numbers : Annotated [ list [ int ], Body ()]):
+return sum ( numbers )
+🤓 Other versions and variants
+Python 3.10+ - non-Annotated
+Tip
+Prefer to use the Annotated version if possible.
+from collections.abc import Callable
+from fastapi import Body , FastAPI , HTTPException , Request , Response
+from fastapi.exceptions import RequestValidationError
+from fastapi.routing import APIRoute
+class ValidationErrorLoggingRoute ( APIRoute ):
+def get_route_handler ( self ) -> Callable :
+original_route_handler = super () . get_route_handler ()
+async def custom_route_handler ( request : Request ) -> Response :
+try :
+return await original_route_handler ( request )
+except RequestValidationError as exc :
+body = await request . body ()
+detail = { "errors" : exc . errors (), "body" : body . decode ()}
+raise HTTPException ( status_code = 422 , detail = detail )
+return custom_route_handler
+app = FastAPI ()
+app . router . route_class = ValidationErrorLoggingRoute
+@app . post ( "/" )
+async def sum_numbers ( numbers : list [ int ] = Body ()):
+return sum ( numbers )
+如果发生异常， Request 实例仍在作用域内，因此我们可以在处理错误时读取并使用请求体：
+Python 3.10+
+from collections.abc import Callable
+from typing import Annotated
+from fastapi import Body , FastAPI , HTTPException , Request , Response
+from fastapi.exceptions import RequestValidationError
+from fastapi.routing import APIRoute
+class ValidationErrorLoggingRoute ( APIRoute ):
+def get_route_handler ( self ) -> Callable :
+original_route_handler = super () . get_route_handler ()
+async def custom_route_handler ( request : Request ) -> Response :
+try :
+return await original_route_handler ( request )
+except RequestValidationError as exc :
+body = await request . body ()
+detail = { "errors" : exc . errors (), "body" : body . decode ()}
+raise HTTPException ( status_code = 422 , detail = detail )
+return custom_route_handler
+app = FastAPI ()
+app . router . route_class = ValidationErrorLoggingRoute
+@app . post ( "/" )
+async def sum_numbers ( numbers : Annotated [ list [ int ], Body ()]):
+return sum ( numbers )
+🤓 Other versions and variants
+Python 3.10+ - non-Annotated
+Tip
+Prefer to use the Annotated version if possible.
+from collections.abc import Callable
+from fastapi import Body , FastAPI , HTTPException , Request , Response
+from fastapi.exceptions import RequestValidationError
+from fastapi.routing import APIRoute
+class ValidationErrorLoggingRoute ( APIRoute ):
+def get_route_handler ( self ) -> Callable :
+original_route_handler = super () . get_route_handler ()
+async def custom_route_handler ( request : Request ) -> Response :
+try :
+return await original_route_handler ( request )
+except RequestValidationError as exc :
+body = await request . body ()
+detail = { "errors" : exc . errors (), "body" : body . decode ()}
+raise HTTPException ( status_code = 422 , detail = detail )
+return custom_route_handler
+app = FastAPI ()
+app . router . route_class = ValidationErrorLoggingRoute
+@app . post ( "/" )
+async def sum_numbers ( numbers : list [ int ] = Body ()):
+return sum ( numbers )
+在路由器中自定义 APIRoute 类 ¶
+你也可以设置 APIRouter 的 route_class 参数：
+Python 3.10+
+import time
+from collections.abc import Callable
+from fastapi import APIRouter , FastAPI , Request , Response
+from fastapi.routing import APIRoute
+class TimedRoute ( APIRoute ):
+def get_route_handler ( self ) -> Callable :
+original_route_handler = super () . get_route_handler ()
+async def custom_route_handler ( request : Request ) -> Response :
+before = time . time ()
+response : Response = await original_route_handler ( request )
+duration = time . time () - before
+response . headers [ "X-Response-Time" ] = str ( duration )
+print ( f "route duration: { duration } " )
+print ( f "route response: { response } " )
+print ( f "route response headers: { response . headers } " )
+return response
+return custom_route_handler
+app = FastAPI ()
+router = APIRouter ( route_class = TimedRoute )
+@app . get ( "/" )
+async def not_timed ():
+return { "message" : "Not timed" }
+@router . get ( "/timed" )
+async def timed ():
+return { "message" : "It's the time of my life" }
+app . include_router ( router )
+在此示例中， router 下的 路径操作 将使用自定义的 TimedRoute 类，响应中会多一个 X-Response-Time 头，包含生成响应所用的时间：
+Python 3.10+
+import time
+from collections.abc import Callable
+from fastapi import APIRouter , FastAPI , Request , Response
+from fastapi.routing import APIRoute
+class TimedRoute ( APIRoute ):
+def get_route_handler ( self ) -> Callable :
+original_route_handler = super () . get_route_handler ()
+async def custom_route_handler ( request : Request ) -> Response :
+before = time . time ()
+response : Response = await original_route_handler ( request )
+duration = time . time () - before
+response . headers [ "X-Response-Time" ] = str ( duration )
+print ( f "route duration: { duration } " )
+print ( f "route response: { response } " )
+print ( f "route response headers: { response . headers } " )
+return response
+return custom_route_handler
+app = FastAPI ()
+router = APIRouter ( route_class = TimedRoute )
+@app . get ( "/" )
+async def not_timed ():
+return { "message" : "Not timed" }
+@router . get ( "/timed" )
+async def timed ():
+return { "message" : "It's the time of my life" }
+app . include_router ( router )

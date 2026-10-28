@@ -1,0 +1,318 @@
+自托管自定义文档 UI 静态资源 - FastAPI
+
+自托管自定义文档 UI 静态资源 ¶
+🌐 由 AI 与人类协作翻译
+本翻译由人类引导的 AI 生成。🤝
+可能存在误解原意或不够自然等问题。🤖
+你可以通过 帮助我们更好地引导 AI LLM 来改进此翻译。
+英文版本
+API 文档使用 Swagger UI 和 ReDoc，它们各自需要一些 JavaScript 和 CSS 文件。
+默认情况下，这些文件从一个 CDN 提供。
+不过你可以自定义：可以指定特定的 CDN，或自行提供这些文件。
+为 JavaScript 和 CSS 自定义 CDN ¶
+假设你想使用不同的 CDN ，例如使用 https://unpkg.com/ 。
+如果你所在的国家/地区屏蔽了某些 URL，这会很有用。
+关闭自动文档 ¶
+第一步是关闭自动文档，因为默认它们会使用默认的 CDN。
+要关闭它们，在创建 FastAPI 应用时将其 URL 设为 None ：
+Python 3.10+
+from fastapi import FastAPI
+from fastapi.openapi.docs import (
+get_redoc_html ,
+get_swagger_ui_html ,
+get_swagger_ui_oauth2_redirect_html ,
+)
+app = FastAPI ( docs_url = None , redoc_url = None )
+@app . get ( "/docs" , include_in_schema = False )
+async def custom_swagger_ui_html ():
+return get_swagger_ui_html (
+openapi_url = app . openapi_url ,
+title = app . title + " - Swagger UI" ,
+oauth2_redirect_url = app . swagger_ui_oauth2_redirect_url ,
+swagger_js_url = "https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js" ,
+swagger_css_url = "https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" ,
+)
+@app . get ( app . swagger_ui_oauth2_redirect_url , include_in_schema = False )
+async def swagger_ui_redirect ():
+return get_swagger_ui_oauth2_redirect_html ()
+@app . get ( "/redoc" , include_in_schema = False )
+async def redoc_html ():
+return get_redoc_html (
+openapi_url = app . openapi_url ,
+title = app . title + " - ReDoc" ,
+redoc_js_url = "https://unpkg.com/redoc@2/bundles/redoc.standalone.js" ,
+)
+@app . get ( "/users/ {username} " )
+async def read_user ( username : str ):
+return { "message" : f "Hello { username } " }
+包含自定义文档 ¶
+现在你可以为自定义文档创建 路径操作 。
+你可以复用 FastAPI 的内部函数来创建文档的 HTML 页面，并传入所需参数：
+openapi_url ：文档 HTML 页面获取你的 API 的 OpenAPI 模式的 URL。这里可以使用 app.openapi_url 属性。
+title ：你的 API 标题。
+oauth2_redirect_url ：这里可以使用 app.swagger_ui_oauth2_redirect_url 来使用默认值。
+swagger_js_url ：你的 Swagger UI 文档 HTML 获取 JavaScript 文件的 URL。这里是自定义的 CDN URL。
+swagger_css_url ：你的 Swagger UI 文档 HTML 获取 CSS 文件的 URL。这里是自定义的 CDN URL。
+ReDoc 也类似...
+Python 3.10+
+from fastapi import FastAPI
+from fastapi.openapi.docs import (
+get_redoc_html ,
+get_swagger_ui_html ,
+get_swagger_ui_oauth2_redirect_html ,
+)
+app = FastAPI ( docs_url = None , redoc_url = None )
+@app . get ( "/docs" , include_in_schema = False )
+async def custom_swagger_ui_html ():
+return get_swagger_ui_html (
+openapi_url = app . openapi_url ,
+title = app . title + " - Swagger UI" ,
+oauth2_redirect_url = app . swagger_ui_oauth2_redirect_url ,
+swagger_js_url = "https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js" ,
+swagger_css_url = "https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" ,
+)
+@app . get ( app . swagger_ui_oauth2_redirect_url , include_in_schema = False )
+async def swagger_ui_redirect ():
+return get_swagger_ui_oauth2_redirect_html ()
+@app . get ( "/redoc" , include_in_schema = False )
+async def redoc_html ():
+return get_redoc_html (
+openapi_url = app . openapi_url ,
+title = app . title + " - ReDoc" ,
+redoc_js_url = "https://unpkg.com/redoc@2/bundles/redoc.standalone.js" ,
+)
+@app . get ( "/users/ {username} " )
+async def read_user ( username : str ):
+return { "message" : f "Hello { username } " }
+提示
+swagger_ui_redirect 的 路径操作 是在你使用 OAuth2 时的一个辅助。
+如果你把 API 与某个 OAuth2 提供方集成，你就可以完成认证并带着获取到的凭据回到 API 文档里。然后使用真实的 OAuth2 认证与之交互。
+Swagger UI 会在幕后为你处理这些，但它需要这个“重定向”辅助路径。
+创建一个路径操作进行测试 ¶
+现在，为了测试一切是否正常，创建一个 路径操作 ：
+Python 3.10+
+from fastapi import FastAPI
+from fastapi.openapi.docs import (
+get_redoc_html ,
+get_swagger_ui_html ,
+get_swagger_ui_oauth2_redirect_html ,
+)
+app = FastAPI ( docs_url = None , redoc_url = None )
+@app . get ( "/docs" , include_in_schema = False )
+async def custom_swagger_ui_html ():
+return get_swagger_ui_html (
+openapi_url = app . openapi_url ,
+title = app . title + " - Swagger UI" ,
+oauth2_redirect_url = app . swagger_ui_oauth2_redirect_url ,
+swagger_js_url = "https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js" ,
+swagger_css_url = "https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" ,
+)
+@app . get ( app . swagger_ui_oauth2_redirect_url , include_in_schema = False )
+async def swagger_ui_redirect ():
+return get_swagger_ui_oauth2_redirect_html ()
+@app . get ( "/redoc" , include_in_schema = False )
+async def redoc_html ():
+return get_redoc_html (
+openapi_url = app . openapi_url ,
+title = app . title + " - ReDoc" ,
+redoc_js_url = "https://unpkg.com/redoc@2/bundles/redoc.standalone.js" ,
+)
+@app . get ( "/users/ {username} " )
+async def read_user ( username : str ):
+return { "message" : f "Hello { username } " }
+测试 ¶
+现在，你应该可以访问 http://127.0.0.1:8000/docs ，并刷新页面，页面会从新的 CDN 加载这些资源。
+为文档自托管 JavaScript 和 CSS ¶
+如果你需要在离线、无法访问互联网或仅在局域网内时，应用仍能工作，那么自托管 JavaScript 和 CSS 会很有用。
+这里你将看到如何在同一个 FastAPI 应用中自行提供这些文件，并配置文档使用它们。
+项目文件结构 ¶
+假设你的项目文件结构如下：
+.
+├── app
+│ ├── __init__.py
+│ ├── main.py
+现在创建一个目录来存放这些静态文件。
+你的新文件结构可能如下：
+.
+├── app
+│ ├── __init__.py
+│ ├── main.py
+└── static/
+下载文件 ¶
+下载文档需要的静态文件，并将它们放到 static/ 目录中。
+你通常可以右键点击每个链接，选择类似“将链接另存为...”的选项。
+Swagger UI 使用以下文件：
+swagger-ui-bundle.js
+swagger-ui.css
+而 ReDoc 使用以下文件：
+redoc.standalone.js
+之后，你的文件结构可能如下：
+.
+├── app
+│ ├── __init__.py
+│ ├── main.py
+└── static
+├── redoc.standalone.js
+├── swagger-ui-bundle.js
+└── swagger-ui.css
+提供静态文件 ¶
+导入 StaticFiles 。
+在特定路径上“挂载”一个 StaticFiles() 实例。
+Python 3.10+
+from fastapi import FastAPI
+from fastapi.openapi.docs import (
+get_redoc_html ,
+get_swagger_ui_html ,
+get_swagger_ui_oauth2_redirect_html ,
+)
+from fastapi.staticfiles import StaticFiles
+app = FastAPI ( docs_url = None , redoc_url = None )
+app . mount ( "/static" , StaticFiles ( directory = "static" ), name = "static" )
+@app . get ( "/docs" , include_in_schema = False )
+async def custom_swagger_ui_html ():
+return get_swagger_ui_html (
+openapi_url = app . openapi_url ,
+title = app . title + " - Swagger UI" ,
+oauth2_redirect_url = app . swagger_ui_oauth2_redirect_url ,
+swagger_js_url = "/static/swagger-ui-bundle.js" ,
+swagger_css_url = "/static/swagger-ui.css" ,
+)
+@app . get ( app . swagger_ui_oauth2_redirect_url , include_in_schema = False )
+async def swagger_ui_redirect ():
+return get_swagger_ui_oauth2_redirect_html ()
+@app . get ( "/redoc" , include_in_schema = False )
+async def redoc_html ():
+return get_redoc_html (
+openapi_url = app . openapi_url ,
+title = app . title + " - ReDoc" ,
+redoc_js_url = "/static/redoc.standalone.js" ,
+)
+@app . get ( "/users/ {username} " )
+async def read_user ( username : str ):
+return { "message" : f "Hello { username } " }
+测试静态文件 ¶
+启动你的应用，并访问 http://127.0.0.1:8000/static/redoc.standalone.js 。
+你应该会看到一个非常长的 ReDoc 的 JavaScript 文件。
+它可能以如下内容开头：
+/*! For license information please see redoc.standalone.js.LICENSE.txt */
+! function ( e , t ){ "object" == typeof exports && "object" == typeof module ? module . exports = t ( require ( "null" )) :
+...
+这就确认了你的应用能够提供静态文件，并且你把文档所需的静态文件放在了正确的位置。
+现在我们可以配置应用，让文档使用这些静态文件。
+为静态文件关闭自动文档 ¶
+和使用自定义 CDN 一样，第一步是关闭自动文档，因为默认情况下它们会使用 CDN。
+要关闭它们，在创建 FastAPI 应用时将其 URL 设为 None ：
+Python 3.10+
+from fastapi import FastAPI
+from fastapi.openapi.docs import (
+get_redoc_html ,
+get_swagger_ui_html ,
+get_swagger_ui_oauth2_redirect_html ,
+)
+from fastapi.staticfiles import StaticFiles
+app = FastAPI ( docs_url = None , redoc_url = None )
+app . mount ( "/static" , StaticFiles ( directory = "static" ), name = "static" )
+@app . get ( "/docs" , include_in_schema = False )
+async def custom_swagger_ui_html ():
+return get_swagger_ui_html (
+openapi_url = app . openapi_url ,
+title = app . title + " - Swagger UI" ,
+oauth2_redirect_url = app . swagger_ui_oauth2_redirect_url ,
+swagger_js_url = "/static/swagger-ui-bundle.js" ,
+swagger_css_url = "/static/swagger-ui.css" ,
+)
+@app . get ( app . swagger_ui_oauth2_redirect_url , include_in_schema = False )
+async def swagger_ui_redirect ():
+return get_swagger_ui_oauth2_redirect_html ()
+@app . get ( "/redoc" , include_in_schema = False )
+async def redoc_html ():
+return get_redoc_html (
+openapi_url = app . openapi_url ,
+title = app . title + " - ReDoc" ,
+redoc_js_url = "/static/redoc.standalone.js" ,
+)
+@app . get ( "/users/ {username} " )
+async def read_user ( username : str ):
+return { "message" : f "Hello { username } " }
+为静态文件包含自定义文档 ¶
+同样地，现在你可以为自定义文档创建 路径操作 。
+你可以再次复用 FastAPI 的内部函数来创建文档的 HTML 页面，并传入所需参数：
+openapi_url ：文档 HTML 页面获取你的 API 的 OpenAPI 模式的 URL。这里可以使用 app.openapi_url 属性。
+title ：你的 API 标题。
+oauth2_redirect_url ：这里可以使用 app.swagger_ui_oauth2_redirect_url 来使用默认值。
+swagger_js_url ：你的 Swagger UI 文档 HTML 获取 JavaScript 文件的 URL。 这是现在由你的应用自己提供的那个 。
+swagger_css_url ：你的 Swagger UI 文档 HTML 获取 CSS 文件的 URL。 这是现在由你的应用自己提供的那个 。
+ReDoc 也类似...
+Python 3.10+
+from fastapi import FastAPI
+from fastapi.openapi.docs import (
+get_redoc_html ,
+get_swagger_ui_html ,
+get_swagger_ui_oauth2_redirect_html ,
+)
+from fastapi.staticfiles import StaticFiles
+app = FastAPI ( docs_url = None , redoc_url = None )
+app . mount ( "/static" , StaticFiles ( directory = "static" ), name = "static" )
+@app . get ( "/docs" , include_in_schema = False )
+async def custom_swagger_ui_html ():
+return get_swagger_ui_html (
+openapi_url = app . openapi_url ,
+title = app . title + " - Swagger UI" ,
+oauth2_redirect_url = app . swagger_ui_oauth2_redirect_url ,
+swagger_js_url = "/static/swagger-ui-bundle.js" ,
+swagger_css_url = "/static/swagger-ui.css" ,
+)
+@app . get ( app . swagger_ui_oauth2_redirect_url , include_in_schema = False )
+async def swagger_ui_redirect ():
+return get_swagger_ui_oauth2_redirect_html ()
+@app . get ( "/redoc" , include_in_schema = False )
+async def redoc_html ():
+return get_redoc_html (
+openapi_url = app . openapi_url ,
+title = app . title + " - ReDoc" ,
+redoc_js_url = "/static/redoc.standalone.js" ,
+)
+@app . get ( "/users/ {username} " )
+async def read_user ( username : str ):
+return { "message" : f "Hello { username } " }
+提示
+swagger_ui_redirect 的 路径操作 是在你使用 OAuth2 时的一个辅助。
+如果你把 API 与某个 OAuth2 提供方集成，你就可以完成认证并带着获取到的凭据回到 API 文档里。然后使用真实的 OAuth2 认证与之交互。
+Swagger UI 会在幕后为你处理这些，但它需要这个“重定向”辅助路径。
+创建一个路径操作测试静态文件 ¶
+现在，为了测试一切是否正常，创建一个 路径操作 ：
+Python 3.10+
+from fastapi import FastAPI
+from fastapi.openapi.docs import (
+get_redoc_html ,
+get_swagger_ui_html ,
+get_swagger_ui_oauth2_redirect_html ,
+)
+from fastapi.staticfiles import StaticFiles
+app = FastAPI ( docs_url = None , redoc_url = None )
+app . mount ( "/static" , StaticFiles ( directory = "static" ), name = "static" )
+@app . get ( "/docs" , include_in_schema = False )
+async def custom_swagger_ui_html ():
+return get_swagger_ui_html (
+openapi_url = app . openapi_url ,
+title = app . title + " - Swagger UI" ,
+oauth2_redirect_url = app . swagger_ui_oauth2_redirect_url ,
+swagger_js_url = "/static/swagger-ui-bundle.js" ,
+swagger_css_url = "/static/swagger-ui.css" ,
+)
+@app . get ( app . swagger_ui_oauth2_redirect_url , include_in_schema = False )
+async def swagger_ui_redirect ():
+return get_swagger_ui_oauth2_redirect_html ()
+@app . get ( "/redoc" , include_in_schema = False )
+async def redoc_html ():
+return get_redoc_html (
+openapi_url = app . openapi_url ,
+title = app . title + " - ReDoc" ,
+redoc_js_url = "/static/redoc.standalone.js" ,
+)
+@app . get ( "/users/ {username} " )
+async def read_user ( username : str ):
+return { "message" : f "Hello { username } " }
+测试静态文件 UI ¶
+现在，你可以断开 WiFi，访问 http://127.0.0.1:8000/docs ，并刷新页面。
+即使没有互联网，你也能看到 API 的文档并与之交互。

@@ -1,0 +1,35 @@
+测试 WebSockets - FastAPI
+
+测试 WebSockets ¶
+🌐 由 AI 与人类协作翻译
+本翻译由人类引导的 AI 生成。🤝
+可能存在误解原意或不够自然等问题。🤖
+你可以通过 帮助我们更好地引导 AI LLM 来改进此翻译。
+英文版本
+你可以使用同一个 TestClient 来测试 WebSockets。
+为此，在 with 语句中使用 TestClient 连接到 WebSocket：
+Python 3.10+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from fastapi.websockets import WebSocket
+app = FastAPI ()
+@app . get ( "/" )
+async def read_main ():
+return { "msg" : "Hello World" }
+@app . websocket ( "/ws" )
+async def websocket ( websocket : WebSocket ):
+await websocket . accept ()
+await websocket . send_json ({ "msg" : "Hello WebSocket" })
+await websocket . close ()
+def test_read_main ():
+client = TestClient ( app )
+response = client . get ( "/" )
+assert response . status_code == 200
+assert response . json () == { "msg" : "Hello World" }
+def test_websocket ():
+client = TestClient ( app )
+with client . websocket_connect ( "/ws" ) as websocket :
+data = websocket . receive_json ()
+assert data == { "msg" : "Hello WebSocket" }
+注意
+更多细节请查看 Starlette 的文档： 测试 WebSockets 。

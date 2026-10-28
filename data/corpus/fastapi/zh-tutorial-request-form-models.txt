@@ -1,0 +1,93 @@
+表单模型 - FastAPI
+
+表单模型 ¶
+🌐 由 AI 与人类协作翻译
+本翻译由人类引导的 AI 生成。🤝
+可能存在误解原意或不够自然等问题。🤖
+你可以通过 帮助我们更好地引导 AI LLM 来改进此翻译。
+英文版本
+你可以在 FastAPI 中使用 Pydantic 模型 声明 表单字段 。
+注意
+要使用表单，首先安装 python-multipart 。
+将它添加到你的项目：
+$ uv add python-multipart
+注意
+自 FastAPI 版本 0.113.0 起支持此功能。🤓
+表单的 Pydantic 模型 ¶
+你只需声明一个 Pydantic 模型 ，其中包含你希望接收的 表单字段 ，然后将参数声明为 Form ：
+Python 3.10+
+from typing import Annotated
+from fastapi import FastAPI , Form
+from pydantic import BaseModel
+app = FastAPI ()
+class FormData ( BaseModel ):
+username : str
+password : str
+@app . post ( "/login/" )
+async def login ( data : Annotated [ FormData , Form ()]):
+return data
+🤓 Other versions and variants
+Python 3.10+ - non-Annotated
+Tip
+Prefer to use the Annotated version if possible.
+from fastapi import FastAPI , Form
+from pydantic import BaseModel
+app = FastAPI ()
+class FormData ( BaseModel ):
+username : str
+password : str
+@app . post ( "/login/" )
+async def login ( data : FormData = Form ()):
+return data
+FastAPI 将从请求中的 表单数据 中 提取 出 每个字段 的数据，并提供你定义的 Pydantic 模型。
+检查文档 ¶
+你可以在文档 UI 中验证它，地址为 /docs ：
+禁止额外的表单字段 ¶
+在某些特殊使用情况下（可能并不常见），你可能希望将表单字段 限制 为仅在 Pydantic 模型中声明过的字段，并 禁止 任何 额外 的字段。
+注意
+自 FastAPI 版本 0.114.0 起支持此功能。🤓
+你可以使用 Pydantic 的模型配置来 forbid 任何 extra 字段：
+Python 3.10+
+from typing import Annotated
+from fastapi import FastAPI , Form
+from pydantic import BaseModel
+app = FastAPI ()
+class FormData ( BaseModel ):
+username : str
+password : str
+model_config = { "extra" : "forbid" }
+@app . post ( "/login/" )
+async def login ( data : Annotated [ FormData , Form ()]):
+return data
+🤓 Other versions and variants
+Python 3.10+ - non-Annotated
+Tip
+Prefer to use the Annotated version if possible.
+from fastapi import FastAPI , Form
+from pydantic import BaseModel
+app = FastAPI ()
+class FormData ( BaseModel ):
+username : str
+password : str
+model_config = { "extra" : "forbid" }
+@app . post ( "/login/" )
+async def login ( data : FormData = Form ()):
+return data
+如果客户端尝试发送一些额外的数据，他们将收到 错误 响应。
+例如，客户端尝试发送如下表单字段：
+username : Rick
+password : Portal Gun
+extra : Mr. Poopybutthole
+他们将收到一条错误响应，表明字段 extra 不被允许：
+{
+"detail" : [
+{
+"type" : "extra_forbidden" ,
+"loc" : [ "body" , "extra" ],
+"msg" : "Extra inputs are not permitted" ,
+"input" : "Mr. Poopybutthole"
+}
+]
+}
+总结 ¶
+你可以使用 Pydantic 模型在 FastAPI 中声明表单字段。😎
