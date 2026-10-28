@@ -3,13 +3,14 @@
 配置了 ``RAG_DB_HOST`` 时启用；没配置或连不上时**自动降级**到 JSON 存储，
 保证项目在任何电脑上都能直接跑起来（面试时这也是一个可以讲的设计点）。
 
-表结构：
+表结构（v5 起支持多知识库）：
 
-    documents(id, name, chunks, chars, created_at)
+    documents(id, name, collection, chunks, chars, created_at)
     chunks(id, doc_id, idx, text, chars)      -- doc_id 外键，删文档时级联删块
 
 索引设计：
 - ``pk_documents``：主键自增，查询快
+- ``idx_documents_collection``：按知识库过滤文档（多知识库的核心查询）
 - ``idx_chunks_doc``：按 doc_id 找某个文档的所有块（列表/删除/级联都靠它）
 
 连接策略：演示项目用「每次操作建连接 + autocommit」的简单写法，
@@ -33,17 +34,19 @@ from .config import (
     DB_PORT,
     DB_USER,
 )
-from .store import Document, DocumentStore
+from .store import DEFAULT_COLLECTION, Document, DocumentStore
 
 SCHEMA_STATEMENTS = [
     """
     CREATE TABLE IF NOT EXISTS documents (
         id         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
         name       VARCHAR(255)    NOT NULL,
+        collection VARCHAR(64)     NOT NULL DEFAULT 'default',
         chunks     INT             NOT NULL DEFAULT 0,
         chars      INT             NOT NULL DEFAULT 0,
         created_at TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (id)
+        PRIMARY KEY (id),
+        KEY idx_documents_collection (collection)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     """,
     """
@@ -89,18 +92,34 @@ class MySQLDocumentStore:
             with conn.cursor() as cur:
                 for sql in SCHEMA_STATEMENTS:
                     cur.execute(sql)
+                # v4 → v5 迁移：老库没有 collection 列时补上（幂等）
+                cur.execute(
+                    "SELECT COUNT(*) AS n FROM information_schema.COLUMNS "
+                    "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'documents' "
+                    "AND COLUMN_NAME = 'collection'",
+                    (DB_NAME,),
+                )
+                if int((cur.fetchone() or {}).get("n") or 0) == 0:
+                    cur.execute(
+                        "ALTER TABLE documents ADD COLUMN collection VARCHAR(64) "
+                        f"NOT NULL DEFAULT '{DEFAULT_COLLECTION}' AFTER name"
+                    )
+                    cur.execute(
+                        "CREATE INDEX idx_documents_collection ON documents (collection)"
+                    )
 
     # ---------- 增删查 ----------
-    def add(self, name: str, text: str) -> Document:
+    def add(self, name: str, text: str, collection: str = DEFAULT_COLLECTION) -> Document:
         text = (text or "").strip()
         if not text:
             raise ValueError("文档内容为空")
+        collection = collection or DEFAULT_COLLECTION
         pieces = split_text(text, CHUNK_SIZE, CHUNK_OVERLAP)
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "INSERT INTO documents (name, chunks, chars) VALUES (%s, %s, %s)",
-                    (name, len(pieces), len(text)),
+                    "INSERT INTO documents (name, collection, chunks, chars) VALUES (%s, %s, %s, %s)",
+                    (name, collection, len(pieces), len(text)),
                 )
                 doc_id = int(cur.lastrowid or 0)
                 cur.executemany(
@@ -112,11 +131,13 @@ class MySQLDocumentStore:
             name=name,
             text=text,
             created_at=time.time(),
+            collection=collection,
             chunks=[
                 {
                     "id": f"{doc_id}:{index}",
                     "doc_id": str(doc_id),
                     "doc_name": name,
+                    "collection": collection,
                     "index": index,
                     "text": piece,
                 }
@@ -134,18 +155,24 @@ class MySQLDocumentStore:
                 cur.execute("DELETE FROM documents WHERE id = %s", (key,))
                 return cur.rowcount > 0
 
-    def list_documents(self) -> list[dict]:
+    def list_documents(self, collection: str | None = None) -> list[dict]:
+        sql = (
+            "SELECT id, name, collection, created_at, chunks, chars FROM documents "
+        )
+        params: tuple = ()
+        if collection is not None:
+            sql += "WHERE collection = %s "
+            params = (collection,)
+        sql += "ORDER BY created_at DESC, id DESC"
         with self._connect() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT id, name, created_at, chunks, chars "
-                    "FROM documents ORDER BY created_at DESC, id DESC"
-                )
+                cur.execute(sql, params)
                 rows = cur.fetchall()
         return [
             {
                 "id": str(row["id"]),
                 "name": row["name"],
+                "collection": row["collection"],
                 "created_at": row["created_at"].timestamp(),
                 "chunks": int(row["chunks"]),
                 "chars": int(row["chars"]),
@@ -153,34 +180,58 @@ class MySQLDocumentStore:
             for row in rows
         ]
 
-    def all_chunks(self) -> list[dict]:
+    def all_chunks(self, collection: str | None = None) -> list[dict]:
+        sql = (
+            "SELECT c.doc_id, c.idx, c.text, d.name AS doc_name, d.collection "
+            "FROM chunks c JOIN documents d ON d.id = c.doc_id "
+        )
+        params: tuple = ()
+        if collection is not None:
+            sql += "WHERE d.collection = %s "
+            params = (collection,)
+        sql += "ORDER BY c.doc_id, c.idx"
         with self._connect() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT c.doc_id, c.idx, c.text, d.name AS doc_name "
-                    "FROM chunks c JOIN documents d ON d.id = c.doc_id "
-                    "ORDER BY c.doc_id, c.idx"
-                )
+                cur.execute(sql, params)
                 rows = cur.fetchall()
         return [
             {
                 "id": f"{row['doc_id']}:{row['idx']}",
                 "doc_id": str(row["doc_id"]),
                 "doc_name": row["doc_name"],
+                "collection": row["collection"],
                 "index": int(row["idx"]),
                 "text": row["text"],
             }
             for row in rows
         ]
 
-    def stats(self) -> dict:
+    def collections(self) -> list[dict]:
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT COUNT(*) AS documents, "
-                    "COALESCE(SUM(chunks), 0) AS chunks, "
-                    "COALESCE(SUM(chars), 0) AS chars FROM documents"
+                    "SELECT collection AS name, COUNT(*) AS documents, "
+                    "COALESCE(SUM(chunks), 0) AS chunks "
+                    "FROM documents GROUP BY collection ORDER BY collection"
                 )
+                rows = cur.fetchall()
+        result = [
+            {"name": row["name"], "documents": int(row["documents"]), "chunks": int(row["chunks"])}
+            for row in rows
+        ]
+        if DEFAULT_COLLECTION not in {item["name"] for item in result}:
+            result.insert(0, {"name": DEFAULT_COLLECTION, "documents": 0, "chunks": 0})
+        return result
+
+    def stats(self, collection: str | None = None) -> dict:
+        sql = "SELECT COUNT(*) AS documents, COALESCE(SUM(chunks), 0) AS chunks, COALESCE(SUM(chars), 0) AS chars FROM documents"
+        params: tuple = ()
+        if collection is not None:
+            sql += " WHERE collection = %s"
+            params = (collection,)
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, params)
                 row = cur.fetchone() or {}
         return {
             "documents": int(row.get("documents") or 0),

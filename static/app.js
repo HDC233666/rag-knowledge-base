@@ -138,15 +138,58 @@ function toast(message, isError = true) {
 }
 
 /* ---------- 顶部状态 + 文档列表 ---------- */
+const COLLECTION_KEY = "rag-collection";
+
+function currentCollection() {
+  const select = $("collection");
+  return (select && select.value) || "default";
+}
+
+function saveCollection(name) {
+  try {
+    localStorage.setItem(COLLECTION_KEY, name);
+  } catch (_) {
+    /* 隐私模式下 localStorage 可能不可用，忽略即可 */
+  }
+}
+
+function restoreCollection() {
+  try {
+    return localStorage.getItem(COLLECTION_KEY) || "default";
+  } catch (_) {
+    return "default";
+  }
+}
+
+async function refreshCollections() {
+  const collections = await api("/api/collections");
+  const select = $("collection");
+  const wanted = select.value || restoreCollection();
+  select.innerHTML = "";
+  for (const item of collections) {
+    const option = document.createElement("option");
+    option.value = item.name;
+    option.textContent = `${item.name}（${item.documents}）`;
+    select.appendChild(option);
+  }
+  const hasWanted = collections.some((item) => item.name === wanted);
+  select.value = hasWanted ? wanted : collections[0] ? collections[0].name : "default";
+  saveCollection(select.value);
+  return select.value;
+}
+
 async function refresh() {
-  const [stats, docs] = await Promise.all([api("/api/stats"), api("/api/documents")]);
+  const collection = await refreshCollections();
+  const query = `?collection=${encodeURIComponent(collection)}`;
+  const [stats, docs] = await Promise.all([api(`/api/stats${query}`), api(`/api/documents${query}`)]);
   $("stats").textContent = `${stats.documents} 篇 / ${stats.chunks} 块`;
   $("meta").textContent = `模型 ${stats.model} · ${stats.has_key ? "Key 已配置" : "Key 未配置"}`;
+  $("collection-hint").textContent = collection === "default" ? "默认知识库" : "当前知识库";
 
   const list = $("docs");
   list.innerHTML = "";
   if (!docs.length) {
-    list.innerHTML = '<li class="empty">还没有文档，点上面按钮上传</li>';
+    list.innerHTML = '<li class="empty">这个知识库还没有文档，点上面按钮上传</li>';
     return;
   }
   for (const doc of docs) {
@@ -171,15 +214,42 @@ async function refresh() {
   }
 }
 
+/* ---------- 知识库切换 / 新建 ---------- */
+$("collection").addEventListener("change", () => {
+  saveCollection(currentCollection());
+  refresh().catch((error) => toast(error.message));
+});
+
+$("new-collection").addEventListener("click", () => {
+  const name = (prompt("新知识库名称（中文、字母、数字、下划线或短横线）") || "").trim();
+  if (!name) return;
+  if (!/^[\w\u4e00-\u9fff-]{1,64}$/.test(name)) {
+    toast("名称不合法：只能用中文、字母、数字、下划线、短横线");
+    return;
+  }
+  const select = $("collection");
+  if (!Array.from(select.options).some((option) => option.value === name)) {
+    const option = document.createElement("option");
+    option.value = name;
+    option.textContent = `${name}（0）`;
+    select.appendChild(option);
+  }
+  select.value = name;
+  saveCollection(name);
+  toast(`已切换到「${name}」，上传文档后会出现在这里`, false);
+  refresh().catch((error) => toast(error.message));
+});
+
 /* ---------- 上传 ---------- */
 $("file").addEventListener("change", async (event) => {
   const file = event.target.files && event.target.files[0];
   if (!file) return;
   const formData = new FormData();
   formData.append("file", file);
+  formData.append("collection", currentCollection());
   try {
     const result = await api("/api/upload", { method: "POST", body: formData });
-    toast(`已收录《${result.name}》（${result.chunks} 块）`, false);
+    toast(`已收录《${result.name}》到「${result.collection}」（${result.chunks} 块）`, false);
     refresh();
   } catch (error) {
     toast(error.message);
@@ -241,7 +311,7 @@ async function askStream(question, onEvent) {
   const response = await fetch("/api/ask/stream", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question, history: conversation.slice(-6) }),
+    body: JSON.stringify({ question, history: conversation.slice(-6), collection: currentCollection() }),
   });
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));

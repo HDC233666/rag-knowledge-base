@@ -119,7 +119,29 @@ body {
 }
 .doc-del:hover { color: #ef4444; }
 
+.collections { display: flex; gap: 6px; margin-bottom: 6px; }
+.collections select {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  font-size: 12px;
+}
+.collections button {
+  width: 32px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--accent);
+  font-size: 15px;
+  cursor: pointer;
+}
+.collections button:hover { background: var(--accent-weak); }
 .hint { color: var(--muted); font-size: 11px; margin-top: 12px; }
+#collection-hint { margin: 2px 0 8px; }
 
 /* 右侧对话区 */
 .chat { display: flex; flex-direction: column; min-height: 0; }

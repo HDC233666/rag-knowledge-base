@@ -149,6 +149,20 @@ score(d) = Σ  1 / (k + rank_i(d))
 
 ---
 
+## 6.5 多知识库：为什么要做数据隔离
+
+一句话：**检索质量不只取决于算法，还取决于候选池里有什么**。
+
+- 把所有资料堆进一个库，问「报销流程」时，旅行攻略、菜谱也可能被召回——它们和问题字面有重合（「流程」「酒店」），混合检索也救不了；
+- 做法：文档带 `collection` 字段，检索只在该库的切片里做；
+  - JSON 后端：Python 里按字段过滤（简单，适合小库）；
+  - MySQL 后端：`collection` 列 + 索引，`WHERE collection = ?`（真做多租户的基础）；
+- 前端侧栏切换 / 新建知识库，切库时文档列表、统计、问答一起切；
+- 面试边界：这是**逻辑隔离**，不是权限系统。真做 SaaS 多租户还要加：用户身份、库级 ACL、配额与计费。
+
+面试怎么说：
+> 「我在同一个服务里做了多知识库隔离：每个库独立切片、独立检索，MySQL 用 collection 列做过滤。它解决的是检索污染问题，不是安全问题——真正的多租户还要做鉴权。」
+
 ## 7. 降级与容错（面试常问）
 
 | 故障 | 处理 |
@@ -173,7 +187,7 @@ score(d) = Σ  1 / (k + rank_i(d))
 |---|---|---|
 | 富文本加载（PDF/Word） | ✅ 已支持 pdf/md/txt/csv/log | Word 解析（python-docx） |
 | 文本切割 | ✅ 按句 + 重叠 | 按标题的语义切分 |
-| 向量库（Milvus/Pinecone/ES/FAISS/Chroma） | �� FAISS HNSW + numpy 两种后端（自动降级） | 接 Chroma/Milvus 做持久化与多租户 |
+| 向量库（Milvus/Pinecone/ES/FAISS/Chroma） | ✅ FAISS HNSW + numpy 两种后端（自动降级） | 接 Chroma/Milvus 做持久化与多租户 |
 | 索引 HNSW | ✅ FAISS `IndexHNSWFlat`（可调 M / efSearch） | 生产级参数调优 |
 | 多路召回 | ✅ BM25 + 向量 + 改写多查询 | 加关键词/实体召回 |
 | 重排 | ✅ LLM listwise 打分 | 换专用 rerank 模型（bge-reranker） |

@@ -37,10 +37,11 @@
 | 检索评估 | 内置 100 题评估集 + 脚本，一键对比 BM25 / 混合 / 重排 / 改写的 hit@1、hit@3、MRR |
 | 生成质量评估 | 跑通「生成 → LLM 裁判打分」流程，输出忠实度 / 相关性 / 引用质量，思路对齐 RAGAS |
 | 流式回答 | `/api/ask/stream` 走 SSE：先推检索结果，再逐字推回答；界面边生成边显示 |
+| 多知识库 | 每篇文档属于一个 collection（默认 `default`），侧栏可切换 / 新建；不同知识库的文档与检索互不干扰 |
 | 多轮对话 | 前端自动带上最近几轮问答，追问（「那向量检索的缺点呢？」）能接上文 |
 | 限流 | 每 IP 每分钟请求数上限（`RAG_RATE_LIMIT`），超限返回 429，防止接口被刷 |
 | 界面 | 原生 HTML/CSS/JS，无构建工具，支持深色模式，回答自动渲染 Markdown |
-| 测试 | pytest，39 个用例覆盖切分/检索/融合/重排/缓存/向量索引/接口/流式/限流；GitHub Actions 自动跑 |
+| 测试 | pytest，46 个用例覆盖切分/检索/融合/重排/缓存/向量索引/多知识库/接口/流式/限流；GitHub Actions 自动跑 |
 
 ## 架构
 
@@ -134,13 +135,14 @@ uvicorn app.main:app --reload
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/health` | 健康检查（含模型名、Key 是否配置） |
-| GET | `/api/stats` | 知识库统计（文档数 / 块数 / 字数） |
-| GET | `/api/documents` | 文档列表 |
-| POST | `/api/documents` | 创建文档（JSON：`{name, text}`） |
-| POST | `/api/upload` | 上传文件（multipart） |
+| GET | `/api/health` | 健康检查（含模型名、Key 是否配置、向量后端） |
+| GET | `/api/stats?collection=` | 知识库统计（文档数 / 块数 / 字数） |
+| GET | `/api/collections` | 知识库列表（每个库的文档数与块数） |
+| GET | `/api/documents?collection=` | 文档列表 |
+| POST | `/api/documents` | 创建文档（JSON：`{name, text, collection?}`） |
+| POST | `/api/upload` | 上传文件（multipart，可带 `collection` 字段） |
 | DELETE | `/api/documents/{id}` | 删除文档 |
-| POST | `/api/ask` | 提问（JSON：`{question, top_k?, history?}`）→ 一次性返回 |
+| POST | `/api/ask` | 提问（JSON：`{question, top_k?, history?, collection?}`）→ 一次性返回 |
 | POST | `/api/ask/stream` | 同上入参，**SSE 流式**：`trace` / `delta` / `done` 事件 |
 
 流式接口的事件（每条 `data: {...}`）：
@@ -352,6 +354,13 @@ RAG_DB_NAME=rag_kb
 - 多轮：追问（「那它的缺点呢？」）不带上下文会被当成新问题，前端带最近 6 条消息后体验才像聊天助手；
 - 限流：问答要花 token，公开 demo 被刷会烧钱；按 IP 每分钟限 60 次，超限 429，健康检查放行。
 
+**为什么加多知识库（collection）？**
+
+- 一个知识库装所有资料会互相污染：问「公司报销流程」时，旅行攻略或个人笔记也可能被当成候选片段；
+- 做法是每篇文档带 `collection` 字段（默认 `default`），检索只在该库的切片里做，等于给混合检索加了「数据隔离」这一层；
+- MySQL 用 `collection` 列 + 索引过滤，JSON 后端按字段过滤；前端侧栏可切换与新建，切库时文档列表、统计、问答全部跟着切；
+- 面试可以讲清楚边界：这是**逻辑隔离**不是权限系统——真做多租户还要加用户身份、库级鉴权与配额。
+
 **降级策略（面试常问）**
 
 - 向量模型加载失败 → 自动退化为哈希向量（`HashEmbedder`），保证服务不挂；
@@ -381,6 +390,7 @@ RAG_DB_NAME=rag_kb
 - [x] 向量索引后端：numpy 精确 / FAISS HNSW 近似（自动降级）
 - [x] 评估集扩到 100 题 + 分题型归因
 - [x] 生成质量评估（忠实度 / 相关性 / 引用质量，LLM-as-a-judge）
+- [x] 多知识库（collection 隔离，前端可切换/新建）
 - [ ] 答案评分/反馈按钮
 - [ ] Docker 部署
 

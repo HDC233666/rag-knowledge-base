@@ -38,9 +38,10 @@ An **out-of-the-box** RAG (Retrieval-Augmented Generation) knowledge-base Q&A ap
 | Generation eval | End-to-end generation + LLM-as-a-judge scoring: faithfulness / relevance / citation quality, RAGAS-style |
 | Streaming | `/api/ask/stream` over SSE: retrieval trace first, then the answer token by token |
 | Multi-turn | The frontend sends recent turns so follow-up questions keep context |
+| Collections | Every document belongs to a collection (default `default`); the sidebar switches/creates them, and documents + retrieval stay isolated per collection |
 | Rate limiting | Per-IP request cap (`RAG_RATE_LIMIT`), `429` when exceeded |
 | UI | Vanilla HTML/CSS/JS, no build step, dark mode supported, Markdown rendering |
-| Tests | pytest with 39 cases covering chunking / retrieval / fusion / reranking / caching / API / streaming / rate limiting; GitHub Actions runs them automatically |
+| Tests | pytest with 46 cases covering chunking / retrieval / fusion / reranking / caching / API / streaming / rate limiting; GitHub Actions runs them automatically |
 
 ## Architecture
 
@@ -134,13 +135,14 @@ Open **http://127.0.0.1:8000**.
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/api/health` | Health check (model name, key configured) |
-| GET | `/api/stats` | Knowledge-base stats (documents / chunks / characters) |
-| GET | `/api/documents` | List documents |
-| POST | `/api/documents` | Create a document (JSON: `{name, text}`) |
+| GET | `/api/health` | Health check (model name, key configured, vector backend) |
+| GET | `/api/stats?collection=` | Knowledge-base stats (documents / chunks / characters) |
+| GET | `/api/collections` | List collections (documents + chunks per collection) |
+| GET | `/api/documents?collection=` | List documents |
+| POST | `/api/documents` | Create a document (JSON: `{name, text, collection?}`) |
 | POST | `/api/upload` | Upload a file (multipart) |
 | DELETE | `/api/documents/{id}` | Delete a document |
-| POST | `/api/ask` | Ask a question (JSON: `{question, top_k?, history?}`) — one shot |
+| POST | `/api/ask` | Ask a question (JSON: `{question, top_k?, history?, collection?}`) — one shot |
 | POST | `/api/ask/stream` | Same body, **SSE stream**: `trace` / `delta` / `done` events |
 
 SSE events (`data: {...}`):
@@ -190,7 +192,7 @@ rag-knowledge-base/
 │   └── smoke.py       # Real API smoke test
 ├── docs/
 │   └── LEARNING-RAG-ADVANCED.md  # Beginner-friendly deep dive (theory + eval + interview Q&A)
-├── tests/             # pytest tests (33 cases)
+├── tests/             # pytest tests (46 cases)
 └── .github/workflows/ci.yml
 ```
 
@@ -343,6 +345,13 @@ RAG_DB_NAME=rag_kb
 - FAISS HNSW builds a multi-layer graph for approximate nearest neighbours, near-logarithmic queries, at the cost of recall < 100% (tune `efSearch` to trade accuracy);
 - Shipped as an `auto` backend with graceful fallback to numpy: zero dependencies on small corpora, and a demonstrable answer to "what do you switch when the corpus grows" — the same retrieval interface with two implementations is the "evolvable architecture" this kind of project should show.
 
+**Why collections?**
+
+- Dumping every document into one knowledge base pollutes retrieval: ask about "reimbursement" and a travel guide may still show up as a candidate chunk;
+- Each document carries a `collection` field (default `default`) and retrieval only runs inside that collection — data isolation on top of hybrid retrieval;
+- MySQL filters on an indexed `collection` column; the JSON backend filters in Python; the sidebar switches/creates collections and the document list, stats and Q&A all follow;
+- Be honest in an interview: this is **logical isolation**, not an auth system — real multi-tenant work still needs identity, per-collection permissions and quotas.
+
 **Why streaming, multi-turn and rate limiting?**
 
 - Streaming: retrieval + generation takes 1–2 s, and the page sits blank until it finishes. Over SSE the retrieval trace and citations arrive first, then the answer streams token by token;
@@ -378,6 +387,7 @@ Correctness is covered by tests: `tests/test_hybrid.py` and `tests/test_pipeline
 - [x] Vector index backends: numpy exact / FAISS HNSW approximate (graceful fallback)
 - [x] Eval set grown to 100 questions with per-group attribution
 - [x] Generation quality evaluation (faithfulness / relevance / citation, LLM-as-a-judge)
+- [x] Collections (isolated knowledge bases, switchable in the UI)
 - [ ] Answer rating / feedback button
 - [ ] Docker deployment
 

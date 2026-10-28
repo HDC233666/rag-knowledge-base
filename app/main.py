@@ -8,12 +8,13 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from collections import deque
 from contextlib import asynccontextmanager
 from typing import Literal
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -27,6 +28,19 @@ from .rag import answer_stream as rag_answer_stream
 from .vectorstore import backend_name as vector_backend_name
 
 store = make_store()
+
+# 知识库名称：中文、字母、数字、下划线、短横线，1~64 字符
+_COLLECTION_RE = re.compile(r"^[\w\u4e00-\u9fff-]{1,64}$")
+
+
+def _clean_collection(value: str | None) -> str:
+    name = (value or "default").strip() or "default"
+    if not _COLLECTION_RE.match(name):
+        raise HTTPException(
+            status_code=400,
+            detail="知识库名称只能包含中文、字母、数字、下划线和短横线（1~64 字符）",
+        )
+    return name
 
 
 def _seed_sample_docs() -> None:
@@ -87,11 +101,13 @@ class AskRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     top_k: int | None = Field(default=None, ge=1, le=10)
     history: list[Message] = Field(default_factory=list, max_length=12)
+    collection: str = Field(default="default", max_length=64)
 
 
 class DocumentIn(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     text: str = Field(min_length=1)
+    collection: str = Field(default="default", max_length=64)
 
 
 @app.get("/", include_in_schema=False)
@@ -109,10 +125,18 @@ def health() -> dict:
     }
 
 
+@app.get("/api/collections")
+def list_collections() -> list[dict]:
+    """知识库列表（名称 + 文档数 + 切片数），前端用于切换。"""
+    return store.collections()
+
+
 @app.get("/api/stats")
-def stats() -> dict:
+def stats(collection: str | None = None) -> dict:
+    name = _clean_collection(collection) if collection else None
     return {
-        **store.stats(),
+        **store.stats(name),
+        "collection": name,
         "has_key": bool(DEEPSEEK_API_KEY),
         "model": DEEPSEEK_MODEL,
         "storage": store.backend,
@@ -120,21 +144,24 @@ def stats() -> dict:
 
 
 @app.get("/api/documents")
-def list_documents() -> list[dict]:
-    return store.list_documents()
+def list_documents(collection: str | None = None) -> list[dict]:
+    name = _clean_collection(collection) if collection else None
+    return store.list_documents(name)
 
 
 @app.post("/api/documents", status_code=201)
 def create_document(payload: DocumentIn) -> dict:
+    collection = _clean_collection(payload.collection)
     try:
-        doc = store.add(payload.name, payload.text)
+        doc = store.add(payload.name, payload.text, collection)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"id": doc.id, "name": doc.name, "chunks": len(doc.chunks)}
+    return {"id": doc.id, "name": doc.name, "collection": doc.collection, "chunks": len(doc.chunks)}
 
 
 @app.post("/api/upload", status_code=201)
-async def upload_document(file: UploadFile = File(...)) -> dict:
+async def upload_document(file: UploadFile = File(...), collection: str = Form("default")) -> dict:
+    name = _clean_collection(collection)
     data = await file.read()
     if not data:
         raise HTTPException(status_code=400, detail="文件是空的")
@@ -145,10 +172,10 @@ async def upload_document(file: UploadFile = File(...)) -> dict:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     try:
-        doc = store.add(file.filename or "upload.txt", text)
+        doc = store.add(file.filename or "upload.txt", text, name)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"id": doc.id, "name": doc.name, "chunks": len(doc.chunks)}
+    return {"id": doc.id, "name": doc.name, "collection": doc.collection, "chunks": len(doc.chunks)}
 
 
 @app.delete("/api/documents/{doc_id}")
@@ -161,8 +188,9 @@ def delete_document(doc_id: str) -> dict:
 @app.post("/api/ask")
 def ask(payload: AskRequest) -> dict:
     history = [m.model_dump() for m in payload.history]
+    collection = _clean_collection(payload.collection)
     try:
-        return rag_answer(payload.question, store.all_chunks(), payload.top_k, history)
+        return rag_answer(payload.question, store.all_chunks(collection), payload.top_k, history)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except llm.LLMError as exc:
@@ -173,7 +201,8 @@ def ask(payload: AskRequest) -> dict:
 def ask_stream(payload: AskRequest):
     """流式回答：SSE，每行一个 JSON 事件（trace / delta / done / error）。"""
     history = [m.model_dump() for m in payload.history]
-    chunks = store.all_chunks()
+    collection = _clean_collection(payload.collection)
+    chunks = store.all_chunks(collection)
 
     def event_stream():
         try:

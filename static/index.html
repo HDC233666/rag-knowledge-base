@@ -15,9 +15,14 @@
     <div class="layout">
       <aside class="sidebar">
         <h2>知识库 <span class="pill" id="stats">–</span></h2>
+        <div class="collections">
+          <select id="collection" aria-label="选择知识库"></select>
+          <button id="new-collection" type="button" title="新建知识库">＋</button>
+        </div>
+        <p class="hint" id="collection-hint">默认知识库</p>
         <label class="upload">
           <input id="file" type="file" accept=".txt,.md,.markdown,.pdf,.csv,.log" hidden />
-          <span>＋ 上传文档</span>
+          <span>＋ 上传文档到当前知识库</span>
         </label>
         <ul class="docs" id="docs"></ul>
         <p class="hint">支持 txt / md / pdf / csv，单文件 ≤ 20MB</p>
