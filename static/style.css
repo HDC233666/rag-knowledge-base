@@ -285,3 +285,39 @@ body {
   z-index: 50;
 }
 .toast.error { background: #b91c1c; }
+
+/* 回答反馈条 */
+.feedback {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+  font-size: 12px;
+  color: var(--muted);
+  flex-wrap: wrap;
+}
+.feedback button {
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 8px;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.feedback button:hover:not(:disabled) { background: var(--accent-weak); }
+.feedback button.picked { border-color: var(--accent); background: var(--accent-weak); }
+.feedback button:disabled { cursor: default; opacity: 0.7; }
+/* 有序列表跨多个 <ol> 连续编号（模型分节输出时避免每段都从 1 开始） */
+.bubble { counter-reset: bubble-li; }
+.bubble ol { list-style: none; padding-left: 26px; }
+.bubble ol > li { counter-increment: bubble-li; position: relative; }
+.bubble ol > li::before {
+  content: counter(bubble-li) ". ";
+  position: absolute;
+  left: -22px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}

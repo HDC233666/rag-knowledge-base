@@ -261,7 +261,14 @@ $("file").addEventListener("change", async (event) => {
 /* ---------- 提问 ---------- */
 let conversation = []; // 多轮对话历史（只发给后端最近 6 条）
 
+function clearWelcome() {
+  const welcome = messages.querySelector(".welcome");
+  if (welcome) welcome.remove();
+}
+
+
 function appendUser(text) {
+  clearWelcome();
   const node = document.createElement("div");
   node.className = "msg user";
   node.innerHTML = `<div class="bubble">${toParagraphs(text)}</div>`;
@@ -291,12 +298,50 @@ function paintBot(node, payload, loading = false) {
     )
     .join("");
   node.querySelector(".badges").innerHTML = badges;
+  if (!loading && payload && payload.answer && !node.querySelector(".feedback")) {
+    renderFeedback(node);
+  }
   messages.scrollTop = messages.scrollHeight;
 }
 
-function appendBot(payload, loading = false) {
+/** 👍/👎 反馈条：只在回答完成后出现，点一次即记录并锁定 */
+function renderFeedback(node) {
+  const bar = document.createElement("div");
+  bar.className = "feedback";
+  bar.innerHTML = `
+    <span class="feedback-label">这个回答有帮助吗？</span>
+    <button type="button" data-rating="up" title="有帮助">👍</button>
+    <button type="button" data-rating="down" title="没帮助">👎</button>`;
+  bar.querySelectorAll("button").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const rating = button.dataset.rating;
+      bar.querySelectorAll("button").forEach((item) => (item.disabled = true));
+      button.classList.add("picked");
+      try {
+        const response = await fetch("/api/feedback", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            rating,
+            question: node.dataset.question || "",
+            collection: currentCollection(),
+          }),
+        });
+        if (!response.ok) throw new Error(`反馈失败（${response.status}）`);
+        toast(rating === "up" ? "感谢反馈 👍" : "收到，会继续改进 👎");
+      } catch (error) {
+        toast(error.message);
+      }
+    });
+  });
+  (node.querySelector(".bubble") || node).appendChild(bar);
+}
+
+function appendBot(payload, loading = false, question = "") {
+  clearWelcome();
   const node = document.createElement("div");
   node.className = "msg bot";
+  node.dataset.question = question;
   node.innerHTML = `
     <div class="bubble"></div>
     <div class="citations"></div>
@@ -343,7 +388,7 @@ $("form").addEventListener("submit", async (event) => {
 
   textarea.value = "";
   appendUser(question);
-  const pending = appendBot(null, true);
+  const pending = appendBot(null, true, question);
   const bubble = pending.querySelector(".bubble");
 
   let answerText = "";

@@ -39,9 +39,11 @@ An **out-of-the-box** RAG (Retrieval-Augmented Generation) knowledge-base Q&A ap
 | Streaming | `/api/ask/stream` over SSE: retrieval trace first, then the answer token by token |
 | Multi-turn | The frontend sends recent turns so follow-up questions keep context |
 | Collections | Every document belongs to a collection (default `default`); the sidebar switches/creates them, and documents + retrieval stay isolated per collection |
+| Feedback | 👍/👎 under each answer, appended to `data/feedback.jsonl`; stats via `/api/feedback/stats` |
+| Observability | `/api/metrics` exposes Prometheus counters (questions, errors, latency, streams) |
 | Rate limiting | Per-IP request cap (`RAG_RATE_LIMIT`), `429` when exceeded |
 | UI | Vanilla HTML/CSS/JS, no build step, dark mode supported, Markdown rendering |
-| Tests | pytest with 46 cases covering chunking / retrieval / fusion / reranking / caching / API / streaming / rate limiting; GitHub Actions runs them automatically |
+| Tests | pytest with 49 cases covering chunking / retrieval / fusion / reranking / caching / API / streaming / rate limiting; GitHub Actions runs them automatically |
 
 ## Architecture
 
@@ -144,6 +146,9 @@ Open **http://127.0.0.1:8000**.
 | DELETE | `/api/documents/{id}` | Delete a document |
 | POST | `/api/ask` | Ask a question (JSON: `{question, top_k?, history?, collection?}`) — one shot |
 | POST | `/api/ask/stream` | Same body, **SSE stream**: `trace` / `delta` / `done` events |
+| POST | `/api/feedback` | Feedback `{rating: up\|down, question?, comment?, collection?}` |
+| GET | `/api/feedback/stats` | Feedback stats (👍/👎 counts + last 5) |
+| GET | `/api/metrics` | Prometheus text metrics |
 
 SSE events (`data: {...}`):
 
@@ -388,6 +393,8 @@ Correctness is covered by tests: `tests/test_hybrid.py` and `tests/test_pipeline
 - [x] Eval set grown to 100 questions with per-group attribution
 - [x] Generation quality evaluation (faithfulness / relevance / citation, LLM-as-a-judge)
 - [x] Collections (isolated knowledge bases, switchable in the UI)
+- [x] Answer feedback (👍/👎 + stats endpoint)
+- [x] Prometheus metrics (`/api/metrics`)
 - [ ] Answer rating / feedback button
 - [ ] Docker deployment
 

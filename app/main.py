@@ -15,11 +15,11 @@ from contextlib import asynccontextmanager
 from typing import Literal
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import llm
+from . import llm, metrics
 from .config import DATA_DIR, DEEPSEEK_API_KEY, DEEPSEEK_MODEL, RATE_LIMIT_PER_MIN, STATIC_DIR
 from .db import make_store
 from .loaders import load_bytes
@@ -175,6 +175,7 @@ async def upload_document(file: UploadFile = File(...), collection: str = Form("
         doc = store.add(file.filename or "upload.txt", text, name)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    metrics.incr("rag_upload_total")
     return {"id": doc.id, "name": doc.name, "collection": doc.collection, "chunks": len(doc.chunks)}
 
 
@@ -189,12 +190,19 @@ def delete_document(doc_id: str) -> dict:
 def ask(payload: AskRequest) -> dict:
     history = [m.model_dump() for m in payload.history]
     collection = _clean_collection(payload.collection)
+    metrics.incr("rag_ask_total")
     try:
-        return rag_answer(payload.question, store.all_chunks(collection), payload.top_k, history)
+        result = rag_answer(payload.question, store.all_chunks(collection), payload.top_k, history)
     except ValueError as exc:
+        metrics.incr("rag_ask_error")
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except llm.LLMError as exc:
+        metrics.incr("rag_ask_error")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    metrics.incr("rag_ask_ok")
+    if result.get("latency_ms") is not None:
+        metrics.incr("rag_ask_latency_ms_sum", int(result["latency_ms"]))
+    return result
 
 
 @app.post("/api/ask/stream")
@@ -204,13 +212,19 @@ def ask_stream(payload: AskRequest):
     collection = _clean_collection(payload.collection)
     chunks = store.all_chunks(collection)
 
+    metrics.incr("rag_stream_total")
+
     def event_stream():
         try:
             for event in rag_answer_stream(payload.question, chunks, payload.top_k, history):
+                if event.get("type") == "done":
+                    metrics.incr("rag_stream_ok")
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except ValueError as exc:
+            metrics.incr("rag_stream_error")
             yield f"data: {json.dumps({'type': 'error', 'detail': str(exc)}, ensure_ascii=False)}\n\n"
         except llm.LLMError as exc:
+            metrics.incr("rag_stream_error")
             yield f"data: {json.dumps({'type': 'error', 'detail': str(exc)}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
@@ -218,3 +232,54 @@ def ask_stream(payload: AskRequest):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+class FeedbackRequest(BaseModel):
+    rating: Literal["up", "down"]
+    question: str = Field("", max_length=2000)
+    comment: str = Field("", max_length=2000)
+    collection: str = Field("default", max_length=64)
+
+
+@app.post("/api/feedback")
+def submit_feedback(payload: FeedbackRequest) -> dict:
+    """记录一次答案反馈（👍/👎），追加写入 data/feedback.jsonl。"""
+    record = {
+        "rating": payload.rating,
+        "question": payload.question.strip(),
+        "comment": payload.comment.strip(),
+        "collection": _clean_collection(payload.collection),
+        "created_at": time.time(),
+    }
+    path = DATA_DIR / "feedback.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+    metrics.incr(f"rag_feedback_{payload.rating}")
+    return {"ok": True}
+
+
+@app.get("/api/feedback/stats")
+def feedback_stats() -> dict:
+    path = DATA_DIR / "feedback.jsonl"
+    up = down = 0
+    recent: list[dict] = []
+    if path.exists():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if item.get("rating") == "up":
+                up += 1
+            elif item.get("rating") == "down":
+                down += 1
+            recent.append(item)
+    return {"up": up, "down": down, "total": up + down, "recent": recent[-5:]}
+
+
+@app.get("/api/metrics", response_class=PlainTextResponse)
+def prometheus_metrics() -> str:
+    """Prometheus 文本格式指标：便于接监控，也更像生产服务。"""
+    metrics.set_gauge("rag_collections", len(store.collections()))
+    return metrics.render_prometheus()

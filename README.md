@@ -38,10 +38,12 @@
 | 生成质量评估 | 跑通「生成 → LLM 裁判打分」流程，输出忠实度 / 相关性 / 引用质量，思路对齐 RAGAS |
 | 流式回答 | `/api/ask/stream` 走 SSE：先推检索结果，再逐字推回答；界面边生成边显示 |
 | 多知识库 | 每篇文档属于一个 collection（默认 `default`），侧栏可切换 / 新建；不同知识库的文档与检索互不干扰 |
+| 答案反馈 | 回答下方 👍/👎，写入 `data/feedback.jsonl`，`/api/feedback/stats` 看统计 |
+| 可观测 | `/api/metrics` 暴露 Prometheus 指标（提问数、错误数、延迟、流式数） |
 | 多轮对话 | 前端自动带上最近几轮问答，追问（「那向量检索的缺点呢？」）能接上文 |
 | 限流 | 每 IP 每分钟请求数上限（`RAG_RATE_LIMIT`），超限返回 429，防止接口被刷 |
 | 界面 | 原生 HTML/CSS/JS，无构建工具，支持深色模式，回答自动渲染 Markdown |
-| 测试 | pytest，46 个用例覆盖切分/检索/融合/重排/缓存/向量索引/多知识库/接口/流式/限流；GitHub Actions 自动跑 |
+| 测试 | pytest，49 个用例覆盖切分/检索/融合/重排/缓存/向量索引/多知识库/反馈/指标/接口/流式/限流；GitHub Actions 自动跑 |
 
 ## 架构
 
@@ -144,6 +146,9 @@ uvicorn app.main:app --reload
 | DELETE | `/api/documents/{id}` | 删除文档 |
 | POST | `/api/ask` | 提问（JSON：`{question, top_k?, history?, collection?}`）→ 一次性返回 |
 | POST | `/api/ask/stream` | 同上入参，**SSE 流式**：`trace` / `delta` / `done` 事件 |
+| POST | `/api/feedback` | 答案反馈 `{rating: up\|down, question?, comment?, collection?}` |
+| GET | `/api/feedback/stats` | 反馈统计（👍/👎 数量 + 最近 5 条） |
+| GET | `/api/metrics` | Prometheus 文本指标 |
 
 流式接口的事件（每条 `data: {...}`）：
 
@@ -391,7 +396,8 @@ RAG_DB_NAME=rag_kb
 - [x] 评估集扩到 100 题 + 分题型归因
 - [x] 生成质量评估（忠实度 / 相关性 / 引用质量，LLM-as-a-judge）
 - [x] 多知识库（collection 隔离，前端可切换/新建）
-- [ ] 答案评分/反馈按钮
+- [x] 答案评分/反馈按钮（👍/👎 + 统计接口）
+- [x] Prometheus 指标（`/api/metrics`）
 - [ ] Docker 部署
 
 ## 安全提示
