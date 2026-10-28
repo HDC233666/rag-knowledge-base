@@ -9,7 +9,7 @@ An **out-of-the-box** RAG (Retrieval-Augmented Generation) knowledge-base Q&A ap
 - Frontend + backend + tests + CI included — a solid **internship / job-hunting project**
 - Chinese-first optimizations: sentence-aware chunking, Chinese tokenizer, bge Chinese embeddings, traceable citations
 
-[![CI](https://github.com/your-name/rag-knowledge-base/actions/workflows/ci.yml/badge.svg)](https://github.com/your-name/rag-knowledge-base/actions/workflows/ci.yml)
+[![CI](https://github.com/HDC233666/rag-knowledge-base/actions/workflows/ci.yml/badge.svg)](https://github.com/HDC233666/rag-knowledge-base/actions/workflows/ci.yml)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Python](https://img.shields.io/badge/python-3.11%2B-yellow)
 

@@ -9,7 +9,7 @@
 - 前端 + 后端 + 测试 + CI 齐全，适合作为**实习/求职项目**
 - 中文场景优化：按句切分、中文分词、bge 中文向量模型、引用可追溯
 
-[![CI](https://github.com/your-name/rag-knowledge-base/actions/workflows/ci.yml/badge.svg)](https://github.com/your-name/rag-knowledge-base/actions/workflows/ci.yml)
+[![CI](https://github.com/HDC233666/rag-knowledge-base/actions/workflows/ci.yml/badge.svg)](https://github.com/HDC233666/rag-knowledge-base/actions/workflows/ci.yml)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Python](https://img.shields.io/badge/python-3.11%2B-yellow)
 
