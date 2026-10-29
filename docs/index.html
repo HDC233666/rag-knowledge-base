@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RAG 知识库问答系统 · 李东泉</title>
+<meta name="description" content="面向私有文档的 RAG 问答系统：BM25 + 向量混合召回、RRF 融合、LLM 改写与重排，答案带可溯源引用。" />
+<style>
+  :root {
+    --bg: #0b1020;
+    --panel: #131a2e;
+    --panel-2: #1a2340;
+    --line: #24304f;
+    --text: #e8eefc;
+    --muted: #93a2c4;
+    --brand: #4c8dff;
+    --brand-2: #7c5cff;
+    --ok: #34d399;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: radial-gradient(1200px 600px at 15% -10%, #1b2a55 0%, transparent 60%),
+                radial-gradient(900px 500px at 90% 0%, #2a1b4f 0%, transparent 55%),
+                var(--bg);
+    color: var(--text);
+    font: 16px/1.7 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 56px 24px 80px; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px;
+    color: var(--muted); font-size: 13px; background: rgba(255,255,255,.02);
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 12px var(--ok); }
+  h1 { font-size: 40px; line-height: 1.25; margin: 20px 0 12px; letter-spacing: -.5px; }
+  h1 span { background: linear-gradient(90deg, #6aa8ff, #a78bfa); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .lead { color: var(--muted); font-size: 17px; max-width: 720px; margin: 0 0 28px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 40px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 12px 20px; border-radius: 12px; text-decoration: none;
+    font-weight: 600; font-size: 15px; border: 1px solid transparent;
+    transition: transform .15s ease, box-shadow .15s ease;
+  }
+  .btn:hover { transform: translateY(-1px); }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--brand), var(--brand-2));
+    color: #fff; box-shadow: 0 10px 30px rgba(76,141,255,.28);
+  }
+  .btn-ghost { border-color: var(--line); color: var(--text); background: rgba(255,255,255,.02); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 40px; }
+  .card { background: linear-gradient(180deg, var(--panel), var(--panel-2)); border: 1px solid var(--line); border-radius: 14px; padding: 18px 18px 16px; }
+  .card .k { color: var(--muted); font-size: 13px; }
+  .card .v { font-size: 26px; font-weight: 700; margin-top: 6px; letter-spacing: -.5px; }
+  .card .v small { font-size: 13px; font-weight: 500; color: var(--muted); margin-left: 4px; }
+  h2 { font-size: 18px; margin: 36px 0 14px; padding-left: 10px; border-left: 3px solid var(--brand); }
+  ul { margin: 0; padding-left: 20px; color: var(--muted); }
+  li { margin: 6px 0; }
+  li b { color: var(--text); font-weight: 600; }
+  .tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .tag { font-size: 13px; color: #bcd0ff; background: rgba(76,141,255,.10); border: 1px solid rgba(76,141,255,.28); padding: 4px 10px; border-radius: 8px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 14px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 500; }
+  td b { color: var(--text); }
+  .foot { margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; display: flex; flex-wrap: wrap; gap: 8px 20px; }
+  .foot a { color: #9dbcff; text-decoration: none; }
+  @media (max-width: 560px) { h1 { font-size: 30px; } .wrap { padding: 36px 18px 60px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="badge"><span class="dot"></span> 演示在线 · 单人项目 · 2026.10</div>
+  <h1>RAG <span>知识库问答系统</span></h1>
+  <p class="lead">
+    面向私有文档的检索增强问答：BM25 与向量双路召回、RRF 融合、LLM 查询改写与重排，
+    生成的回答带 <b>[1][2]</b> 编号引用，每条可定位到原文切片。支持多知识库隔离、流式输出、限流与成本看板。
+  </p>
+
+  <div class="actions">
+    <a class="btn btn-primary" href="http://8.137.173.141:8010/?k=demo2026" target="_blank" rel="noreferrer">▶ 打开在线演示</a>
+    <a class="btn btn-ghost" href="https://github.com/HDC233666/rag-knowledge-base" target="_blank" rel="noreferrer">查看源码</a>
+    <a class="btn btn-ghost" href="https://github.com/HDC233666/rag-knowledge-base/blob/main/docs/ARCHITECTURE.md" target="_blank" rel="noreferrer">架构图</a>
+    <a class="btn btn-ghost" href="https://github.com/HDC233666/rag-knowledge-base/blob/main/docs/EVAL_REPORT.md" target="_blank" rel="noreferrer">评测报告</a>
+  </div>
+
+  <div class="grid">
+    <div class="card"><div class="k">hit@1（100 题评估集）</div><div class="v">0.75 <small>BM25 0.72 → 0.75</small></div></div>
+    <div class="card"><div class="k">2114 切片干扰下 hit@1</div><div class="v">0.76 <small>重排从 0.57 拉回</small></div></div>
+    <div class="card"><div class="k">MRR</div><div class="v">0.844 <small>0.818 → 0.844</small></div></div>
+    <div class="card"><div class="k">压测延迟</div><div class="v">44<small>ms p50 · 20 并发 ≈31 QPS</small></div></div>
+    <div class="card"><div class="k">单元测试</div><div class="v">70 <small>pytest · CI 全绿</small></div></div>
+    <div class="card"><div class="k">单次问答成本</div><div class="v">¥0.003 <small>含改写与重排</small></div></div>
+  </div>
+
+  <h2>做了什么</h2>
+  <ul>
+    <li><b>检索链路：</b>文档按段落切块（600 字 / 80 字重叠）→ BM25 + bge-small-zh 向量双路召回 → RRF 融合（k=60）→ LLM 查询改写 → LLM 重排 → Top-N 拼装 Prompt。</li>
+    <li><b>数据层：</b>MySQL 两表（documents / chunks，外键级联删除 + 索引加速），数据库不可用时自动降级 JSON，保证演示环境可用；FAISS HNSW 索引，环境不支持时降级 numpy 暴力检索。</li>
+    <li><b>工程与安全：</b>SSE 分阶段流式（stage / delta / done）、按 IP 限流、prompt 注入识别与中和、系统提示泄露兜底、服务端多轮会话（TTL + 轮数上限）。</li>
+    <li><b>可观测与评估：</b>token 与费用估算、延迟 P50/P95、缓存命中率看板；一条命令跑 100 题 × 4 组检索配置 + 生成质量（LLM-as-judge）+ RAGAS 四指标。</li>
+  </ul>
+
+  <h2>评估结果（同题同语料，逐项对比）</h2>
+  <table>
+    <thead><tr><th>配置</th><th>hit@1</th><th>hit@3</th><th>MRR</th><th>平均延迟</th></tr></thead>
+    <tbody>
+      <tr><td>BM25 单路</td><td><b>0.72</b></td><td>0.93</td><td>0.818</td><td>3 ms</td></tr>
+      <tr><td>BM25 + 向量（RRF）</td><td>0.67</td><td>0.91</td><td>0.790</td><td>12 ms</td></tr>
+      <tr><td>+ LLM 重排</td><td>0.75</td><td>0.95</td><td>0.843</td><td>1492 ms</td></tr>
+      <tr><td>+ 查询改写 + 重排</td><td><b>0.75</b></td><td>0.95</td><td><b>0.844</b></td><td>2685 ms</td></tr>
+    </tbody>
+  </table>
+  <p class="lead" style="font-size:14px;margin-top:10px">
+    说明：混合召回在 14 篇小语料上反而拉低命中率——干扰不足时向量噪声占主导；引入 2114 篇 FastAPI 文档做干扰后，重排把 hit@1 从 0.57 拉回 0.76，才体现价值。这段“为什么一开始不回、什么时候才值”写在 README 里。
+  </p>
+
+  <h2>技术栈</h2>
+  <div class="tags">
+    <span class="tag">Python 3.13</span><span class="tag">FastAPI</span><span class="tag">BM25</span>
+    <span class="tag">bge-small-zh</span><span class="tag">fastembed</span><span class="tag">FAISS HNSW</span>
+    <span class="tag">RRF</span><span class="tag">MySQL</span><span class="tag">SSE</span>
+    <span class="tag">pytest</span><span class="tag">Docker Compose</span><span class="tag">GitHub Actions</span>
+    <span class="tag">阿里云 ECS</span><span class="tag">Prometheus 指标</span>
+  </div>
+
+  <h2>另一个项目</h2>
+  <ul>
+    <li><b>Agent 工具调用框架：</b>Function Calling + 9 个工具 + 人工审批 + MCP，<a href="https://hdc233666.github.io/agent-toolkit/" style="color:#9dbcff">落地页</a> · <a href="https://github.com/HDC233666/agent-toolkit" style="color:#9dbcff">源码</a></li>
+  </ul>
+
+  <div class="foot">
+    <span>演示口令：demo2026 · 每日预算 300 次</span>
+    <span>冷启动约 3–10 秒（首次加载向量模型）</span>
+    <a href="https://github.com/HDC233666/rag-knowledge-base">github.com/HDC233666/rag-knowledge-base</a>
+  </div>
+</div>
+</body>
+</html>
