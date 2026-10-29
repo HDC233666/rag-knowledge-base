@@ -15,6 +15,9 @@
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Python](https://img.shields.io/badge/python-3.11%2B-yellow)
 
+**在线演示**：<http://8.137.173.141:8010/?k=demo2026>（口令 `demo2026`，每日 300 次；容器冷启动后第一个问题约 8 秒）
+**评测报告**：[docs/EVAL_REPORT.md](docs/EVAL_REPORT.md)｜**架构图**：[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)｜**一页纸**：[docs/PROJECT.md](docs/PROJECT.md)
+
 | 对话界面（回答 + 引用） | API 文档（Swagger UI） |
 |---|---|
 | ![对话界面](docs/screenshots/chat.png) | ![API 文档](docs/screenshots/api.png) |
