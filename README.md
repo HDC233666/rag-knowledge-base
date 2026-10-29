@@ -2,6 +2,8 @@
 
 > [English version](README.en.md)
 
+![演示：上传文档后提问，流式回答并给出引用](docs/screenshots/demo.gif)
+
 一个**开箱即用**的 RAG（检索增强生成）知识库问答系统：上传文档 → 自动切分 → 混合检索（BM25 + 向量）→ 查询改写 + 重排 → 让大模型基于资料回答，并标注引用来源。
 
 - 纯 Python，**不需要 GPU**，不需要独立向量数据库，`pip install` 五分钟跑起来
@@ -477,3 +479,4 @@ RAG_DB_NAME=rag_kb
 ## 许可证
 
 [MIT](LICENSE)
+

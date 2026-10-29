@@ -14,12 +14,12 @@ from collections import deque
 from contextlib import asynccontextmanager
 from typing import Literal
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import llm, metrics
+from . import guard, llm, metrics
 from .config import DATA_DIR, DEEPSEEK_API_KEY, DEEPSEEK_MODEL, RATE_LIMIT_PER_MIN, STATIC_DIR
 from .db import make_store
 from .loaders import load_bytes
@@ -93,11 +93,52 @@ async def rate_limit(request: Request, call_next):
     return await call_next(request)
 
 
+# 访问保护（可选）：设置了 DEMO_PASSWORD 后，除健康检查/解锁/静态资源外都要先输入口令
+_PUBLIC_PATHS = ("/", "/docs", "/redoc", "/openapi.json")
+
+
+@app.middleware("http")
+async def access_guard(request: Request, call_next):
+    path = request.url.path
+    if (
+        path.startswith("/static")
+        or path in _PUBLIC_PATHS
+        or path == "/api/health"
+        or (path == "/api/unlock" and request.method == "POST")
+    ):
+        return await call_next(request)
+    if not guard.is_unlocked(request):
+        return JSONResponse(
+            {"detail": "这是演示站点，请输入访问口令后使用（地址后加 ?k=口令 可自动解锁）"},
+            status_code=401,
+        )
+    return await call_next(request)
+
+
+class UnlockRequest(BaseModel):
+    password: str = Field(min_length=1, max_length=200)
+
+
+@app.post("/api/unlock")
+def unlock(payload: UnlockRequest, response: Response) -> dict:
+    """校验口令并种 cookie（7 天）。未开启口令时直接返回成功。"""
+    if not guard.auth_enabled():
+        return {"ok": True, "enabled": False}
+    if payload.password != guard.PASSWORD:
+        raise HTTPException(status_code=403, detail="口令不对")
+    response.set_cookie(
+        guard.COOKIE_NAME,
+        guard._digest(payload.password),
+        httponly=True,
+        samesite="lax",
+        max_age=7 * 24 * 3600,
+    )
+    return {"ok": True, "enabled": True}
+
+
 class Message(BaseModel):
     role: Literal["user", "assistant"]
     content: str = Field(min_length=1, max_length=4000)
-
-
 class AskRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     top_k: int | None = Field(default=None, ge=1, le=10)
@@ -130,6 +171,8 @@ def health() -> dict:
         "model": DEEPSEEK_MODEL,
         "has_key": bool(DEEPSEEK_API_KEY),
         "vector_backend": vector_backend_name(),
+        "auth": guard.auth_enabled(),
+        "budget_left": guard.budget_left(),
     }
 
 
@@ -217,6 +260,8 @@ def retrieve_only(payload: RetrieveRequest) -> dict:
 
 @app.post("/api/ask")
 def ask(payload: AskRequest) -> dict:
+    if not guard.check_budget():
+        raise HTTPException(status_code=429, detail="今日演示额度已用完，明天再来试吧")
     history = [m.model_dump() for m in payload.history]
     collection = _clean_collection(payload.collection)
     metrics.incr("rag_ask_total")
@@ -237,6 +282,8 @@ def ask(payload: AskRequest) -> dict:
 @app.post("/api/ask/stream")
 def ask_stream(payload: AskRequest):
     """流式回答：SSE，每行一个 JSON 事件（trace / delta / done / error）。"""
+    if not guard.check_budget():
+        raise HTTPException(status_code=429, detail="今日演示额度已用完，明天再来试吧")
     history = [m.model_dump() for m in payload.history]
     collection = _clean_collection(payload.collection)
     chunks = store.all_chunks(collection)
