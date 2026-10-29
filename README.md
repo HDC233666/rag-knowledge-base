@@ -204,7 +204,7 @@ rag-knowledge-base/
 │   └── smoke.py       # 真实接口冒烟
 ├── docs/
 │   └── LEARNING-RAG-ADVANCED.md  # 面向零基础的进阶讲解（原理 + 评估 + 面试问答）
-├── tests/             # pytest 测试（39 个用例）
+├── tests/             # pytest 测试（51 个用例）
 └── .github/workflows/ci.yml
 ```
 
