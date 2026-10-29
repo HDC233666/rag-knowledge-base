@@ -6,11 +6,25 @@ import time
 
 from openai import APIConnectionError, APIError, APITimeoutError, OpenAI
 
+from . import metrics
 from .config import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL, TEMPERATURE
 
 
 class LLMError(RuntimeError):
     """对用户友好的大模型调用错误（API 层会转成 502）。"""
+
+
+def _usage_dict(usage) -> dict:
+    """把 SDK 的 usage 归一化成 {prompt, completion, total}；没有就返回空字典。"""
+    if usage is None:
+        return {}
+    prompt = int(getattr(usage, "prompt_tokens", 0) or 0)
+    completion = int(getattr(usage, "completion_tokens", 0) or 0)
+    total = int(getattr(usage, "total_tokens", 0) or 0) or (prompt + completion)
+    if not total:
+        return {}
+    # 只做归一化，token 记到指标里由调用方（rag）统一做，避免重复计数
+    return {"prompt": prompt, "completion": completion, "total": total}
 
 
 def get_client() -> OpenAI:
@@ -36,11 +50,14 @@ def chat(messages: list[dict], temperature: float | None = None) -> dict:
                 temperature=TEMPERATURE if temperature is None else temperature,
             )
             text = (response.choices[0].message.content or "").strip()
-            usage = getattr(response, "usage", None)
+            usage = _usage_dict(getattr(response, "usage", None))
+            latency = int((time.time() - started) * 1000)
+            metrics.observe_latency("llm", latency)
             return {
                 "text": text,
-                "latency_ms": int((time.time() - started) * 1000),
-                "tokens": getattr(usage, "total_tokens", None) if usage else None,
+                "latency_ms": latency,
+                "tokens": usage.get("total"),
+                "usage": usage,
             }
         except (APIConnectionError, APITimeoutError) as exc:  # 网络抖动：重试
             last_error = exc
@@ -76,10 +93,12 @@ def chat_stream(messages: list[dict], temperature: float | None = None):
             stream = client.chat.completions.create(**kwargs)
 
         tokens = None
+        usage: dict = {}
         for chunk in stream:
-            usage = getattr(chunk, "usage", None)
-            if usage is not None:
-                tokens = getattr(usage, "total_tokens", None)
+            chunk_usage = getattr(chunk, "usage", None)
+            if chunk_usage is not None:
+                usage = _usage_dict(chunk_usage)
+                tokens = usage.get("total")
             choices = getattr(chunk, "choices", None) or []
             if not choices:
                 continue
@@ -87,7 +106,9 @@ def chat_stream(messages: list[dict], temperature: float | None = None):
             text = getattr(delta, "content", None) if delta else None
             if text:
                 yield {"delta": text}
-        yield {"done": True, "tokens": tokens, "latency_ms": int((time.time() - started) * 1000)}
+        latency = int((time.time() - started) * 1000)
+        metrics.observe_latency("llm", latency)
+        yield {"done": True, "tokens": tokens, "usage": usage, "latency_ms": latency}
     except (APIConnectionError, APITimeoutError) as exc:
         raise LLMError(f"网络连接失败：{exc}") from exc
     except APIError as exc:

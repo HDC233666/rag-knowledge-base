@@ -20,7 +20,7 @@ import sqlite3
 import time
 from pathlib import Path
 
-from . import config
+from . import config, metrics
 
 
 def _connect() -> sqlite3.Connection:
@@ -39,7 +39,7 @@ def _key(namespace: str, text: str) -> str:
 
 
 def get(namespace: str, text: str) -> dict | None:
-    """命中且未过期则返回缓存值（dict），否则 None。"""
+    """命中且未过期则返回缓存值（dict），否则 None（同时记命中率指标）。"""
     if not config.ENABLE_CACHE:
         return None
     try:
@@ -48,7 +48,11 @@ def get(namespace: str, text: str) -> dict | None:
                 "SELECT value FROM cache WHERE key = ? AND expires_at > ?",
                 (_key(namespace, text), time.time()),
             ).fetchone()
-        return json.loads(row[0]) if row else None
+        if row:
+            metrics.incr("rag_cache_hit")
+            return json.loads(row[0])
+        metrics.incr("rag_cache_miss")
+        return None
     except Exception:  # noqa: BLE001
         return None
 

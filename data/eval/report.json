@@ -1,6 +1,7 @@
 {
-  "generated_at": "2026-10-28 23:11:37",
+  "generated_at": "2026-10-29 17:20:18",
   "chunks": 14,
+  "extra_corpus": null,
   "questions": 100,
   "embedder": "BAAI/bge-small-zh-v1.5",
   "results": [
@@ -9,7 +10,7 @@
       "hit@1": 0.72,
       "hit@3": 0.93,
       "mrr": 0.8183333333333332,
-      "avg_latency_ms": 3.1620909995399415,
+      "avg_latency_ms": 2.9383600037544966,
       "misses": [
         "q25",
         "q27",
@@ -23,7 +24,7 @@
       "hit@1": 0.67,
       "hit@3": 0.91,
       "mrr": 0.79,
-      "avg_latency_ms": 14.127017988357693,
+      "avg_latency_ms": 11.590885010082275,
       "misses": [
         "q17",
         "q51",
@@ -34,10 +35,10 @@
     },
     {
       "config": "hybrid+rerank",
-      "hit@1": 0.74,
-      "hit@3": 0.94,
-      "mrr": 0.8375,
-      "avg_latency_ms": 1492.6485540042631,
+      "hit@1": 0.75,
+      "hit@3": 0.95,
+      "mrr": 0.8433333333333334,
+      "avg_latency_ms": 1491.9202239974402,
       "misses": [
         "q17",
         "q54",
@@ -47,10 +48,11 @@
     {
       "config": "hybrid+rewrite+rerank",
       "hit@1": 0.75,
-      "hit@3": 0.96,
-      "mrr": 0.8475,
-      "avg_latency_ms": 2641.760260006413,
+      "hit@3": 0.95,
+      "mrr": 0.8441666666666667,
+      "avg_latency_ms": 2684.902795010712,
       "misses": [
+        "q17",
         "q54",
         "q68",
         "q96"

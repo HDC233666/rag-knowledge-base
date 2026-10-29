@@ -104,6 +104,16 @@ uvicorn app.main:app --reload
 > 第一次启动会自动把 `data/sample/` 里的示例文档导入，可以直接问「什么是 RAG？」试试。
 > 接口文档：http://127.0.0.1:8000/docs
 
+### 不想配环境？一条命令起服务
+
+```bash
+cp .env.example .env      # 填 DEEPSEEK_API_KEY
+docker compose up -d --build
+# 打开 http://127.0.0.1:8010/docs
+```
+
+想连 MySQL（可选）：`docker compose --profile mysql up -d`，并在 `.env` 里把 `RAG_DB_HOST` 设成 `mysql`、填上用户名密码。模型缓存放命名卷里，重启不用重新下载。
+
 ### 配置项（.env）
 
 | 变量 | 默认值 | 说明 |
@@ -136,6 +146,12 @@ uvicorn app.main:app --reload
 | `RAG_DB_USER` | `root` | 数据库账号 |
 | `RAG_DB_PASSWORD` | 空 | 数据库密码（只写进 `.env`，别提交） |
 | `RAG_DB_NAME` | `rag_kb` | 数据库名 |
+| `RAG_INJECTION_GUARD` | `1` | 提示注入防护：中和危险指令 + 「不可信数据」边界 + 输出打码 |
+| `RAG_SESSION_TTL` | `1800` | 服务端会话保留时长（秒） |
+| `RAG_SESSION_MAX_TURNS` | `6` | 每个会话最多保留几轮问答 |
+| `RAG_PRICE_INPUT_PER_M` | `2.0` | 成本估算单价：输入（元/百万 token） |
+| `RAG_PRICE_INPUT_CACHED_PER_M` | `0.2` | 成本估算单价：输入命中缓存 |
+| `RAG_PRICE_OUTPUT_PER_M` | `8.0` | 成本估算单价：输出 |
 
 ## API
 
@@ -148,20 +164,25 @@ uvicorn app.main:app --reload
 | POST | `/api/documents` | 创建文档（JSON：`{name, text, collection?}`） |
 | POST | `/api/upload` | 上传文件（multipart，可带 `collection` 字段） |
 | DELETE | `/api/documents/{id}` | 删除文档 |
-| POST | `/api/ask` | 提问（JSON：`{question, top_k?, history?, collection?}`）→ 一次性返回 |
+| POST | `/api/ask` | 提问（JSON：`{question, top_k?, history?, collection?, session_id?}`）→ 一次性返回 |
 | POST | `/api/retrieve` | **只检索不生成**（压测/评估用，默认 `llm=false` 不花 API 费用）：`{question, collection?, top_k?, llm?}` → `{hits, trace, latency_ms}` |
-| POST | `/api/ask/stream` | 同上入参，**SSE 流式**：`trace` / `delta` / `done` 事件 |
+| POST | `/api/ask/stream` | 同上入参，**SSE 流式**：`stage` / `trace` / `delta` / `done` 事件 |
+| POST | `/api/session/new` | 新建服务端会话，返回 `{session_id}`（多轮对话用，也可自己造合规 id） |
+| GET | `/api/session/{id}` | 查会话里最近几轮问答（调试用） |
+| DELETE | `/api/session/{id}` | 清空会话（换话题时用） |
 | POST | `/api/feedback` | 答案反馈 `{rating: up\|down, question?, comment?, collection?}` |
 | GET | `/api/feedback/stats` | 反馈统计（👍/👎 数量 + 最近 5 条） |
-| GET | `/api/metrics` | Prometheus 文本指标 |
+| GET | `/api/metrics` | Prometheus 文本指标（含延迟分位数、token、成本估算） |
+| GET | `/api/dashboard` | **运行看板 JSON**：计数、P50/P95/P99、缓存命中率、token 与花费估算 |
 
 流式接口的事件（每条 `data: {...}`）：
 
 | 事件 | 载荷 | 含义 |
 |---|---|---|
-| `trace` | `{queries, rewrite, rerank, candidates, citations}` | 检索完成，先把引用与 trace 推给前端 |
+| `stage` | `{text}` | 阶段提示（检索中 / 生成中），前端先给用户反馈 |
+| `trace` | `{queries, rewrite, rerank, candidates, citations, injection?}` | 检索完成，先把引用与 trace 推给前端 |
 | `delta` | `{text}` | 回答增量文本（逐字显示） |
-| `done` | `{answer, citations, latency_ms, tokens, trace}` | 整轮结束 |
+| `done` | `{answer, citations, latency_ms, tokens, usage, trace, session_id?}` | 整轮结束 |
 | `error` | `{detail}` | 出错 |
 
 示例：
@@ -190,6 +211,11 @@ rag-knowledge-base/
 │   ├── rerank.py      # LLM 重排
 │   ├── store.py       # 文档仓库（JSON 实现，默认）
 │   ├── db.py          # MySQL 存储实现 + 自动降级
+│   ├── safety.py      # 提示注入防护（检测 / 中和 / 边界 / 输出打码）
+│   ├── session.py     # 服务端多轮会话（TTL + 轮数上限 + 容量上限）
+│   ├── metrics.py     # 指标：计数、延迟分位数、token、成本估算、Prometheus 输出
+│   ├── cache.py       # 改写/重排结果缓存（SQLite + TTL）
+│   ├── guard.py       # 演示访问保护（口令 + 每日额度）
 │   ├── llm.py         # 调用 DeepSeek（重试 + 报错）
 │   └── rag.py         # RAG 主流程（改写→混合召回→融合→重排→生成）
 ├── static/            # 前端（无构建工具）
@@ -198,6 +224,7 @@ rag-knowledge-base/
 │   ├── eval/          # 评估集（questions.json）与报告（report.json）
 │   └── db.json        # 运行时生成（已 gitignore；用 MySQL 时不生成）
 ├── scripts/
+│   ├── eval_all.py    # **一条命令跑完评估并生成 docs/EVAL_REPORT.md**
 │   ├── evaluate.py    # 检索评估：hit@1 / hit@3 / MRR 多配置对比（100 题）
 │   ├── corpus_fastapi.py  # 抓取 FastAPI 中文文档（真实语料扩容）
 │   ├── ingest_corpus.py   # 把抓取语料导入独立集合 fastapi-docs
@@ -205,8 +232,12 @@ rag-knowledge-base/
 │   ├── evaluate_generation.py  # 生成质量评估：LLM 裁判打忠实度/相关性/引用分
 │   └── smoke.py       # 真实接口冒烟
 ├── docs/
+│   ├── ARCHITECTURE.md          # 架构图（Mermaid）+ 关键取舍 + 时序图
+│   ├── PROJECT.md               # 一页纸项目说明（问题 / 做了什么 / 结果 / 取舍）
+│   ├── EVAL_REPORT.md           # 评估报告（脚本生成）
+│   ├── init.sql                 # MySQL 建表脚本（compose 自动执行）
 │   └── LEARNING-RAG-ADVANCED.md  # 面向零基础的进阶讲解（原理 + 评估 + 面试问答）
-├── tests/             # pytest 测试（51 个用例）
+├── tests/             # pytest 测试（70 个用例）
 └── .github/workflows/ci.yml
 ```
 
@@ -244,18 +275,30 @@ python scripts/bench.py --path /api/stats --total 200 --concurrency 50
 ```bash
 python scripts/evaluate.py          # 100 题，需要 .env 里配好 Key（重排/改写要用大模型）
 python scripts/evaluate.py --no-llm # 只对比 BM25 与混合检索，不花钱
+python scripts/eval_all.py --large  # 一条命令：检索评估 + 千级干扰语料 + 生成报告
 ```
+
+`eval_all.py` 会把结果写成 [`docs/EVAL_REPORT.md`](docs/EVAL_REPORT.md)（含生成时间、语料规模、配置对比表），加 `--generation` / `--ragas` 还能把生成质量与 RAGAS 一并写进同一份报告 —— 面试时直接给链接，不用现场跑脚本。
 
 指标说明：**hit@1** = 正确片段排第 1 的比例；**hit@3** = 排进前 3 的比例；**MRR** = 正确片段排名的倒数均值（越接近 1 越好）。
 
-当前基线（14 个切片、100 道题、bge-small-zh）：
+当前基线（14 个切片、100 道题、bge-small-zh，`python scripts/eval_all.py` 生成）：
 
 | 配置 | hit@1 | hit@3 | MRR | 平均延迟 |
 |---|---|---|---|---|
 | 纯 BM25 | **0.72** | 0.93 | 0.818 | 3 ms |
-| 混合召回（BM25 + 向量，RRF） | 0.67 | 0.91 | 0.790 | 14 ms |
-| 混合召回 + LLM 重排 | 0.74 | 0.94 | 0.838 | 1.49 s |
-| 混合召回 + 查询改写 + 重排 | **0.75** | **0.96** | **0.848** | 2.64 s |
+| 混合召回（BM25 + 向量，RRF） | 0.67 | 0.91 | 0.790 | 12 ms |
+| 混合召回 + LLM 重排 | 0.75 | 0.95 | 0.843 | 1.49 s |
+| 混合召回 + 查询改写 + 重排 | **0.75** | **0.95** | **0.844** | 2.69 s |
+
+千级干扰语料（把 FastAPI 中文文档 2114 个切片一起放进检索池，`--large`）——重排的价值在这里更明显：
+
+| 配置 | hit@1 | hit@3 | MRR | 平均延迟 |
+|---|---|---|---|---|
+| 纯 BM25 | 0.61 | 0.87 | 0.733 | 188 ms |
+| 混合召回 | 0.57 | 0.83 | 0.688 | 989 ms |
+| 混合召回 + LLM 重排 | **0.76** | 0.93 | 0.842 | 1.67 s |
+| 混合召回 + 查询改写 + 重排 | 0.75 | **0.95** | **0.847** | 2.06 s |
 
 按题型拆开看，才知道每种改动到底在帮谁（hit@1）：
 

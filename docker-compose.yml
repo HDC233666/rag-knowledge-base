@@ -1,0 +1,66 @@
+# 一键起服务：RAG 应用 + （可选）MySQL
+#
+# 最常用：
+#   docker compose up -d --build            # 只起应用，用本地 data/db.json + JSON 存储
+#   docker compose --profile mysql up -d    # 连 MySQL（需在 .env 里填 RAG_DB_HOST=mysql 等）
+#   docker compose logs -f app              # 看日志
+#   docker compose down                     # 停掉（--volumes 连数据卷一起删）
+#
+# 说明：镜像里已禁用 Python 字节码；模型缓存挂到 volumes，重启不用重新下载。
+
+services:
+  app:
+    build: .
+    image: rag-knowledge-base:latest
+    container_name: rag-kb
+    ports:
+      - "8010:8000"
+    env_file:
+      - .env
+    environment:
+      # 容器内固定监听 0.0.0.0:8000，宿主机映射见 ports
+      RAG_EMBED_CACHE: /models
+      RAG_DB_HOST: ${RAG_DB_HOST:-}
+      RAG_DB_PORT: ${RAG_DB_PORT:-3306}
+      RAG_DB_USER: ${RAG_DB_USER:-}
+      RAG_DB_PASSWORD: ${RAG_DB_PASSWORD:-}
+      RAG_DB_NAME: ${RAG_DB_NAME:-rag_kb}
+    volumes:
+      - fastembed-cache:/models
+      # 想持久化上传的文档/JSON 库，打开下面这行（容器内路径见 app/config.py 的 DATA_DIR）
+      # - ./data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/api/health')\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  mysql:
+    image: mysql:8.0
+    container_name: rag-mysql
+    profiles: ["mysql"]
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rag_root_pw}
+      MYSQL_DATABASE: ${RAG_DB_NAME:-rag_kb}
+      MYSQL_USER: ${RAG_DB_USER:-rag}
+      MYSQL_PASSWORD: ${RAG_DB_PASSWORD:-rag_pw}
+    ports:
+      - "3307:3306"          # 宿主机 3307，避免和本机 MySQL 抢 3306
+    volumes:
+      - mysql-data:/var/lib/mysql
+      # init.sql 只在数据目录为空时执行一次（建库/建用户/授权）
+      - ./docs/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-rag_root_pw}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  fastembed-cache:
+  mysql-data:

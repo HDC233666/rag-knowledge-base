@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-29 02:05:43",
+  "generated_at": "2026-10-29 17:28:31",
   "chunks": 2114,
   "extra_corpus": "data/corpus/fastapi",
   "questions": 100,
@@ -10,7 +10,7 @@
       "hit@1": 0.61,
       "hit@3": 0.87,
       "mrr": 0.7333333333333333,
-      "avg_latency_ms": 181.26956598600373,
+      "avg_latency_ms": 188.01516899140552,
       "misses": [
         "q04",
         "q17",
@@ -28,7 +28,7 @@
       "hit@1": 0.57,
       "hit@3": 0.83,
       "mrr": 0.6875,
-      "avg_latency_ms": 939.0751899778843,
+      "avg_latency_ms": 988.6522250087,
       "misses": [
         "q04",
         "q17",
@@ -49,7 +49,7 @@
       "hit@1": 0.76,
       "hit@3": 0.93,
       "mrr": 0.8416666666666669,
-      "avg_latency_ms": 1499.830660999287,
+      "avg_latency_ms": 1669.3879609857686,
       "misses": [
         "q17",
         "q51",
@@ -61,12 +61,13 @@
     {
       "config": "hybrid+rewrite+rerank",
       "hit@1": 0.75,
-      "hit@3": 0.96,
-      "mrr": 0.8516666666666667,
-      "avg_latency_ms": 2713.105969999451,
+      "hit@3": 0.95,
+      "mrr": 0.8466666666666669,
+      "avg_latency_ms": 2060.713538986165,
       "misses": [
         "q51",
-        "q54"
+        "q54",
+        "q81"
       ]
     }
   ]

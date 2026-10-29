@@ -26,6 +26,7 @@ from .loaders import load_bytes
 from .rag import answer as rag_answer
 from .rag import retrieve as rag_retrieve
 from .rag import answer_stream as rag_answer_stream
+from .session import sessions
 from .vectorstore import backend_name as vector_backend_name
 
 store = make_store()
@@ -139,11 +140,33 @@ def unlock(payload: UnlockRequest, response: Response) -> dict:
 class Message(BaseModel):
     role: Literal["user", "assistant"]
     content: str = Field(min_length=1, max_length=4000)
+
+
+# 服务端会话 id：只允许字母数字下划线短横线，长度 1~64（防路径注入）
+_SESSION_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def _clean_session(value: str | None) -> str | None:
+    if value is None:
+        return None
+    name = value.strip()
+    if not name:
+        return None
+    if not _SESSION_RE.match(name):
+        raise HTTPException(status_code=400, detail="session_id 只能包含字母、数字、下划线和短横线（1~64 字符）")
+    return name
+
+
 class AskRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     top_k: int | None = Field(default=None, ge=1, le=10)
     history: list[Message] = Field(default_factory=list, max_length=12)
     collection: str = Field(default="default", max_length=64)
+    session_id: str | None = Field(
+        default=None,
+        max_length=64,
+        description="服务端会话 id：传了就由服务端记住最近几轮，可以不再传 history",
+    )
 
 
 class RetrieveRequest(BaseModel):
@@ -250,6 +273,8 @@ def retrieve_only(payload: RetrieveRequest) -> dict:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     latency_ms = round((time.perf_counter() - started) * 1000)
+    metrics.incr("rag_retrieve_total")
+    metrics.observe_latency("rag_retrieve", latency_ms)
     return {
         "collection": name,
         "hits": hits,
@@ -262,9 +287,12 @@ def retrieve_only(payload: RetrieveRequest) -> dict:
 def ask(payload: AskRequest) -> dict:
     if not guard.check_budget():
         raise HTTPException(status_code=429, detail="今日演示额度已用完，明天再来试吧")
-    history = [m.model_dump() for m in payload.history]
     collection = _clean_collection(payload.collection)
+    session_id = _clean_session(payload.session_id)
+    # 服务端会话历史优先，客户端传的 history 作为补充（兼容老前端）
+    history = (sessions.history(session_id) if session_id else []) + [m.model_dump() for m in payload.history]
     metrics.incr("rag_ask_total")
+    started = time.perf_counter()
     try:
         result = rag_answer(payload.question, store.all_chunks(collection), payload.top_k, history)
     except ValueError as exc:
@@ -274,27 +302,41 @@ def ask(payload: AskRequest) -> dict:
         metrics.incr("rag_ask_error")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     metrics.incr("rag_ask_ok")
+    metrics.observe_latency("rag_ask", (time.perf_counter() - started) * 1000)
     if result.get("latency_ms") is not None:
         metrics.incr("rag_ask_latency_ms_sum", int(result["latency_ms"]))
+    if session_id:
+        sessions.append_turn(session_id, payload.question, result.get("answer", ""))
+        result["session_id"] = session_id
     return result
 
 
 @app.post("/api/ask/stream")
 def ask_stream(payload: AskRequest):
-    """流式回答：SSE，每行一个 JSON 事件（trace / delta / done / error）。"""
+    """流式回答：SSE，每行一个 JSON 事件（stage / trace / delta / done / error）。"""
     if not guard.check_budget():
         raise HTTPException(status_code=429, detail="今日演示额度已用完，明天再来试吧")
-    history = [m.model_dump() for m in payload.history]
     collection = _clean_collection(payload.collection)
+    session_id = _clean_session(payload.session_id)
+    history = (sessions.history(session_id) if session_id else []) + [m.model_dump() for m in payload.history]
     chunks = store.all_chunks(collection)
 
     metrics.incr("rag_stream_total")
 
     def event_stream():
+        started = time.perf_counter()
+        answer_parts: list[str] = []
         try:
             for event in rag_answer_stream(payload.question, chunks, payload.top_k, history):
+                if event.get("type") == "delta":
+                    answer_parts.append(event.get("text", ""))
                 if event.get("type") == "done":
                     metrics.incr("rag_stream_ok")
+                    metrics.observe_latency("rag_stream", (time.perf_counter() - started) * 1000)
+                    if session_id:
+                        # done.answer 可能被安全模块打码过，用最终版本存会话
+                        sessions.append_turn(session_id, payload.question, event.get("answer") or "".join(answer_parts))
+                        event = {**event, "session_id": session_id}
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except ValueError as exc:
             metrics.incr("rag_stream_error")
@@ -308,6 +350,28 @@ def ask_stream(payload: AskRequest):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@app.post("/api/session/new")
+def new_session() -> dict:
+    """生成一个新的会话 id（也可以自己造：字母数字下划线短横线即可）。"""
+    session_id = sessions.new_id()
+    return {"session_id": session_id, "ttl_seconds": sessions.ttl}
+
+
+@app.get("/api/session/{session_id}")
+def get_session(session_id: str) -> dict:
+    sid = _clean_session(session_id)
+    data = sessions.get(sid)
+    if data is None:
+        raise HTTPException(status_code=404, detail="会话不存在或已过期")
+    return data
+
+
+@app.delete("/api/session/{session_id}")
+def clear_session(session_id: str) -> dict:
+    sid = _clean_session(session_id)
+    return {"ok": sessions.clear(sid)}
 
 
 class FeedbackRequest(BaseModel):
@@ -358,4 +422,21 @@ def feedback_stats() -> dict:
 def prometheus_metrics() -> str:
     """Prometheus 文本格式指标：便于接监控，也更像生产服务。"""
     metrics.set_gauge("rag_collections", len(store.collections()))
+    metrics.set_gauge("rag_sessions", sessions.stats()["sessions"])
     return metrics.render_prometheus()
+
+
+@app.get("/api/dashboard")
+def dashboard() -> dict:
+    """结构化运行看板（JSON）：计数、延迟分位数、缓存命中率、token 与成本估算。
+
+    面试演示用：一条命令就能展示「延迟 P50/P95、缓存命中率、估算花费」。
+    """
+    data = metrics.dashboard()
+    data["gauges"] = {
+        **data["gauges"],
+        "collections": len(store.collections()),
+        "documents": sum(c.get("documents", 0) for c in store.collections()),
+        "sessions": sessions.stats()["sessions"],
+    }
+    return data

@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import time
 
-from . import llm
-from .config import CANDIDATE_K, TOP_K
+from . import llm, metrics, safety
+from .config import CANDIDATE_K, ENABLE_INJECTION_GUARD, TOP_K
 from .rerank import rerank
 from .retrieval import hybrid_search, rrf_fuse
 from .rewrite import rewrite
@@ -24,7 +24,8 @@ SYSTEM_PROMPT = """你是一个严谨的知识库问答助手，只根据【参�
 规则：
 1. 资料里没有的内容，直接回答「知识库里没有找到相关内容」，绝不编造。
 2. 引用资料时在句末标注编号，例如 [1]。
-3. 用中文回答，先给结论，再分点解释。"""
+3. 用中文回答，先给结论，再分点解释。
+""" + safety.GUARD_RULES
 
 
 def _empty_answer() -> dict:
@@ -76,16 +77,31 @@ def _history_messages(history: list[dict] | None) -> list[dict]:
     return messages
 
 
-def _build_messages(question: str, hits: list[dict], history: list[dict] | None = None) -> list[dict]:
-    context = "\n\n".join(
-        f"[{i + 1}] 来源《{hit['doc_name']}》第 {hit['index'] + 1} 段：{hit['text']}"
-        for i, hit in enumerate(hits)
-    )
-    return [
+def _build_messages(
+    question: str, hits: list[dict], history: list[dict] | None = None
+) -> tuple[list[dict], list[str]]:
+    """拼 prompt：资料先中和注入片段，再用「不可信数据」边界包起来。
+
+    返回 (messages, 命中的注入规则名)。规则名会写进 trace，方便事后追溯是哪份资料可疑。
+    """
+    flagged: list[str] = []
+    lines: list[str] = []
+    for i, hit in enumerate(hits):
+        text = hit["text"]
+        if ENABLE_INJECTION_GUARD:
+            for name in safety.scan(text):
+                if name not in flagged:
+                    flagged.append(name)
+            text = safety.neutralize(text)
+        lines.append(f"[{i + 1}] 来源《{hit['doc_name']}》第 {hit['index'] + 1} 段：{text}")
+
+    context = safety.wrap_context(lines) if ENABLE_INJECTION_GUARD else "\n\n".join(lines)
+    messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         *_history_messages(history),
-        {"role": "user", "content": f"【参考资料】\n{context}\n\n【问题】\n{question}"},
+        {"role": "user", "content": f"{context}\n\n【问题】\n{question}"},
     ]
+    return messages, flagged
 
 
 def _citations(hits: list[dict]) -> list[dict]:
@@ -120,12 +136,28 @@ def answer(question: str, chunks: list[dict], top_k: int | None = None, history:
     if not hits:
         return _empty_answer()
 
-    result = llm.chat(_build_messages(question, hits, history))
+    messages, flagged = _build_messages(question, hits, history)
+    if flagged:
+        metrics.incr("rag_injection_suspect")
+        trace["injection"] = flagged[:5]
+
+    result = llm.chat(messages)
+    answer_text = result["text"]
+    usage = result.get("usage") or {}
+    if usage:
+        metrics.add_tokens(usage.get("prompt", 0), usage.get("completion", 0))
+    if ENABLE_INJECTION_GUARD:
+        answer_text, leaked = safety.scrub_output(answer_text, SYSTEM_PROMPT)
+        if leaked:
+            metrics.incr("rag_prompt_leak_blocked")
+            trace["prompt_leak_blocked"] = True
+
     return {
-        "answer": result["text"],
+        "answer": answer_text,
         "citations": _citations(hits),
         "latency_ms": result["latency_ms"],
         "tokens": result.get("tokens"),
+        "usage": usage,
         "trace": trace,
     }
 
@@ -150,22 +182,42 @@ def answer_stream(question: str, chunks: list[dict], top_k: int | None = None, h
         yield {"type": "done", **{k: v for k, v in payload.items()}}
         return
 
+    messages, flagged = _build_messages(question, hits, history)
+    if flagged:
+        metrics.incr("rag_injection_suspect")
+        trace["injection"] = flagged[:5]
+
     yield {"type": "trace", "trace": trace}
     yield {"type": "stage", "text": f"已找到 {len(hits)} 个相关片段，正在生成回答"}
     started = time.time()
     parts: list[str] = []
     tokens = None
-    for event in llm.chat_stream(_build_messages(question, hits, history)):
+    usage: dict = {}
+    for event in llm.chat_stream(messages):
         if "delta" in event:
             parts.append(event["delta"])
             yield {"type": "delta", "text": event["delta"]}
         elif event.get("done"):
             tokens = event.get("tokens")
+            usage = event.get("usage") or {}
+
+    answer_text = "".join(parts)
+    if usage:
+        metrics.add_tokens(usage.get("prompt", 0), usage.get("completion", 0))
+    if ENABLE_INJECTION_GUARD:
+        # 流式已经把原文发出去了，这里只能事后检查：命中泄露时在 done 事件里给出打码版本，
+        # 前端以 done.answer 为准覆盖显示（文档里已注明这个限制）。
+        answer_text, leaked = safety.scrub_output(answer_text, SYSTEM_PROMPT)
+        if leaked:
+            metrics.incr("rag_prompt_leak_blocked")
+            trace["prompt_leak_blocked"] = True
+
     yield {
         "type": "done",
-        "answer": "".join(parts),
+        "answer": answer_text,
         "citations": _citations(hits),
         "latency_ms": int((time.time() - started) * 1000),
         "tokens": tokens,
+        "usage": usage,
         "trace": trace,
     }

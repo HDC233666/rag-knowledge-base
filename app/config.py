@@ -48,6 +48,19 @@ CROSS_ENCODER_MODEL = os.getenv("RAG_CROSS_ENCODER_MODEL", "BAAI/bge-reranker-ba
 # 每个 IP 每分钟最多多少个 /api 请求（公网 demo 建议 30~60；0 = 不限制）
 RATE_LIMIT_PER_MIN = int(os.getenv("RAG_RATE_LIMIT", "60"))
 
+# ===== 安全与多轮（v6）=====
+# 提示注入防护：中和资料里的注入片段 + 输出泄露检查（0 = 关闭）
+ENABLE_INJECTION_GUARD = os.getenv("RAG_INJECTION_GUARD", "1").lower() not in {"0", "false", "off", "no"}
+# 服务端会话记忆：TTL（秒）与每会话保留的轮数
+SESSION_TTL_SECONDS = int(os.getenv("RAG_SESSION_TTL", "1800"))
+SESSION_MAX_TURNS = int(os.getenv("RAG_SESSION_MAX_TURNS", "6"))
+
+# ===== 成本估算（v6）=====
+# 单价按「元 / 百万 token」，默认取 DeepSeek 公开价：输入（未命中）2.0、输入（命中）0.2、输出 8.0
+PRICE_INPUT_PER_M = float(os.getenv("RAG_PRICE_INPUT_PER_M", "2.0"))
+PRICE_INPUT_CACHED_PER_M = float(os.getenv("RAG_PRICE_INPUT_CACHED_PER_M", "0.2"))
+PRICE_OUTPUT_PER_M = float(os.getenv("RAG_PRICE_OUTPUT_PER_M", "8.0"))
+
 # ===== 向量索引（v4）=====
 # auto = 装了 faiss 用 FAISS HNSW，否则 numpy 精确检索；也可强制 numpy / faiss
 VECTOR_BACKEND = os.getenv("RAG_VECTOR_BACKEND", "auto").strip().lower()
